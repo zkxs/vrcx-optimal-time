@@ -1,0 +1,17 @@
+[package]
+name = "vrcx-optimal-time"
+version = "0.1.0"
+edition = "2021"
+authors = ["Michael Ripley <zkxs00@gmail.com>"]
+description = "Analyzes VRCX logs for optimal VRC playtimes"
+edition = "2021"
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/zkxs/vrcx-optimal-time"
+repository = "https://github.com/zkxs/vrcx-optimal-time"
+documentation = "https://github.com/zkxs/vrcx-optimal-time"
+
+[dependencies]
+rusqlite = "~0.28.0"
+toml = "~0.5.9"
+serde = "^1.0.147"
