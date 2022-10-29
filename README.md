@@ -6,7 +6,7 @@ For the best results, you'll need to have used VRCX for a reasonably long time t
 
 ## Installation & Usage
 
-1. Download [vrcx-optimal-time.exe](https://github.com/zkxs/vrcx-optimal-time/releases/latest/download/vrcx-optimal-time.exe), or [your platform's artifact](https://github.com/zkxs/vrcx-optimal-time/releases/latest) for non-Windows OS's.
+1. Download [vrcx-optimal-time.exe](https://github.com/zkxs/vrcx-optimal-time/releases/latest/download/vrcx-optimal-time-windows-x64.exe), or [your platform's artifact](https://github.com/zkxs/vrcx-optimal-time/releases/latest) for non-Windows OS's.
 2. Place the file wherever you want.
 3. Create a file name `config.toml` next to the vrcx-optimal-time executable
 4. Fill in the config by referencing the provided [example config.toml](doc/config.toml).
