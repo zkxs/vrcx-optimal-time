@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Michael Ripley <zkxs00@gmail.com>"]
 description = "Analyzes VRCX logs for optimal VRC playtimes"
-edition = "2021"
 license = "MIT"
 readme = "README.md"
 homepage = "https://github.com/zkxs/vrcx-optimal-time"
@@ -12,6 +11,12 @@ repository = "https://github.com/zkxs/vrcx-optimal-time"
 documentation = "https://github.com/zkxs/vrcx-optimal-time"
 
 [dependencies]
-rusqlite = "~0.28.0"
+rusqlite = { version = "~0.28.0", features = ["bundled"] }
 toml = "~0.5.9"
-serde = "^1.0.147"
+serde = { version = "^1.0.147", features = ["derive"] }
+serde_derive = "^1.0.147"
+chrono = "~0.4.22"
+num-traits = "~0.2.15"
+
+[profile.release]
+lto = "thin"

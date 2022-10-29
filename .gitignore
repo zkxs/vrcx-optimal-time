@@ -4,3 +4,6 @@
 # IDE: IntelliJ
 *.iml
 .idea/
+
+# input files
+/config.toml
