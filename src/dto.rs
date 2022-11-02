@@ -128,15 +128,4 @@ impl TimeSpan {
     pub fn duration(self) -> Duration {
         self.stop.signed_duration_since(self.start)
     }
-
-    /// returns the intersection, or None if the intersection was nonexistent or zero
-    pub fn intersect(self, other: TimeSpan) -> Option<TimeSpan> {
-        let start = self.start.max(other.start);
-        let stop = self.stop.min(other.stop);
-        if stop > start {
-            Some(TimeSpan::new(start, stop))
-        } else {
-            None
-        }
-    }
 }
