@@ -310,7 +310,7 @@ fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, buckets: 
         for day in 0..DAYS_PER_WEEK {
             let buckets_for_day = buckets.get(day).unwrap();
             let bucket_value = buckets_for_day.get(bucket_index).unwrap();
-            let vrcx_activity_count = bucket_value.total_dates();
+            let vrcx_activity_count = bucket_value.total_dates().max(1);
             let online_count = bucket_value.online_count;
 
             /* This next line requires some explanation. TL;DR: it's to account for bias in when data is recorded.
