@@ -147,7 +147,7 @@ fn main() {
     }
 
     // output the results
-    print_buckets(bucket_duration_seconds, buckets_per_day, buckets);
+    print_buckets(bucket_duration_seconds, buckets_per_day, config.normalize, buckets);
 }
 
 /// clamps a time range to when VRCX was running
@@ -296,7 +296,7 @@ fn register_bucket_date(bucket_duration_minutes: u32, bucket_time: DateTime<Loca
 }
 
 /// print bucket data to console
-fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, buckets: Vec<Vec<BucketValue>>) {
+fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, normalize: bool, buckets: Vec<Vec<BucketValue>>) {
     // header
     print!("bucket");
     for day in 0..DAYS_PER_WEEK {
@@ -310,27 +310,31 @@ fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, buckets: 
         for day in 0..DAYS_PER_WEEK {
             let buckets_for_day = buckets.get(day).unwrap();
             let bucket_value = buckets_for_day.get(bucket_index).unwrap();
-            let vrcx_activity_count = bucket_value.total_dates().max(1);
             let online_count = bucket_value.online_count;
 
-            /* This next line requires some explanation. TL;DR: it's to account for bias in when data is recorded.
-             *
-             * Imagine you started using VRCX 100 weeks ago (nearly two years). You don't always run VRCX, because you
-             * turn your computer off sometimes. Lets say that on Saturdays you have a 90% chance of having VRCX running,
-             * while on Wednesdays you only have a 5% chance. Lets call a bucket "active" for a day if VRCX was running.
-             * This means a given Saturday bucket would have been active for ~90 days, but a Wednesday bucket would only have
-             * been active for ~5 days.
-             *
-             * Next, imagine you have a friend who has zero reason to their schedule, and has a perfectly equal chance of being online
-             * at any given time. Without accounting for the bias introduced by when you run VRCX, this friend would appear 18x more
-             * active on Sundays than Wednesdays, which is clearly not true. So you'd see say, 180 hits for Sunday and 10 hits for Wednesday.
-             *
-             * The solution is to record the number of days for which a bucket is "active", and divide the friend online count by that activity count.
-             * This normalizes the data. For Sunday, 180 / 90 = 2. For Wednesday, 10 / 5 = 2.
-             */
-            let normalized_online_activity: f64 = online_count as f64 / vrcx_activity_count as f64;
+            if normalize {
+                let vrcx_activity_count = bucket_value.total_dates().max(1);
 
-            print!("\t{}", normalized_online_activity);
+                /* This next line requires some explanation. TL;DR: it's to account for bias in when data is recorded.
+                 *
+                 * Imagine you started using VRCX 100 weeks ago (nearly two years). You don't always run VRCX, because you
+                 * turn your computer off sometimes. Lets say that on Saturdays you have a 90% chance of having VRCX running,
+                 * while on Wednesdays you only have a 5% chance. Lets call a bucket "active" for a day if VRCX was running.
+                 * This means a given Saturday bucket would have been active for ~90 days, but a Wednesday bucket would only have
+                 * been active for ~5 days.
+                 *
+                 * Next, imagine you have a friend who has zero reason to their schedule, and has a perfectly equal chance of being online
+                 * at any given time. Without accounting for the bias introduced by when you run VRCX, this friend would appear 18x more
+                 * active on Sundays than Wednesdays, which is clearly not true. So you'd see say, 180 hits for Sunday and 10 hits for Wednesday.
+                 *
+                 * The solution is to record the number of days for which a bucket is "active", and divide the friend online count by that activity count.
+                 * This normalizes the data. For Sunday, 180 / 90 = 2. For Wednesday, 10 / 5 = 2.
+                 */
+                let normalized_online_activity: f64 = online_count as f64 / vrcx_activity_count as f64;
+                print!("\t{}", normalized_online_activity);
+            } else {
+                print!("\t{}", online_count);
+            }
         }
         println!();
     }
@@ -497,4 +501,4 @@ impl TimeSpan {
             None
         }
     }
- }
+}

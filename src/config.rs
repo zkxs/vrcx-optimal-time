@@ -8,4 +8,5 @@ pub struct Configuration {
     pub friend_ids: Option<HashSet<String>>,
     pub vrcx_running_detection_threshold_minutes: u32,
     pub bucket_duration_minutes: u32,
+    pub normalize: bool,
 }
