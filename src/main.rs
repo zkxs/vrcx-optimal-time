@@ -168,10 +168,9 @@ fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, buckets: 
              * This means a given Saturday bucket would have been active for ~90 days, but a Wednesday bucket would only have
              * been active for ~5 days.
              *
-             * Next, imagine you a friend who has zero reason to their schedule, and has a perfectly equal chance of being online
-             * at any given time. Lets say they are online 50% of the time. Without accounting for the bias introduced by when you run
-             * VRCX, this friend would appear 18x more active on Sundays than Wednesdays, which is clearly not true. So you'd see say,
-             * 180 hits for Sunday and 10 hits for Wednesday.
+             * Next, imagine you have a friend who has zero reason to their schedule, and has a perfectly equal chance of being online
+             * at any given time. Without accounting for the bias introduced by when you run VRCX, this friend would appear 18x more
+             * active on Sundays than Wednesdays, which is clearly not true. So you'd see say, 180 hits for Sunday and 10 hits for Wednesday.
              *
              * The solution is to record the number of days for which a bucket is "active", and divide the friend online count by that activity count.
              * This normalizes the data. For Sunday, 180 / 90 = 2. For Wednesday, 10 / 5 = 2.
