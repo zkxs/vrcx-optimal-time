@@ -20,18 +20,40 @@ Here's an example chart generated from approximately 200 friends worth of data:
 
 ![example chart](doc/example-chart.png)
 
-## How It Works
+## FAQ
+
+### Why'd you make this?
+
+I was curious when my peeps are online most often, as it makes sense to sync up my VRC schedule with them as much as possible.
+
+### What timezone is the output in?
+
+The output is in your system's local time. There's no weird daylight-savings-time edge-cases, because VRCX actually stores timestamps correctly (thanks VRCX devs).
+
+### Is it safe to run this while VRCX is open?
+
+Yes! I specifically open `VRCX.sqlite3` as readonly, so there is zero chance of vrcx-optimal-time breaking your VRCX database. However, if VRCX writes to `VRCX.sqlite3` while vrcx-optimal-time is running, then the concurrent access is actually handled by [sqlite itself](https://sqlite.org/faq.html#q5)! I will wait for up to [5 seconds](https://docs.rs/rusqlite/latest/rusqlite/struct.Connection.html#method.busy_timeout) for the database to unlock. After that I give up and panic.
+
+### Can't you stalk someone with this?
+
+Yeah! That's what friends are for! I'm stalking *you*, specifically! 😈
+
+...but real talk, the data is *scuffed* if you filter it to only one friend. If you're trying to sync up your schedule with a single person, then your time would be better spent asking them when they play instead of doing a bunch of data science.
+
+### How does it work?
 
 1. Create 10 minute "buckets" across a week
    - 7 days/week * 24 hours/day * 60 minutes/hour / (10 minutes/bucket) = 1008 buckets/week
-2. Grab all friend online/offline events from `VRCX.sqlite3`
-3. Optionally, filter friends to some subset. Perhaps by picking a friend group?
+   - bucket duration can be configured via `config.toml`
+2. Grab all friend Online/Offline events from `VRCX.sqlite3`
+3. Optionally, filter friends to some subset configured in `config.toml`
 4. Iterate over the events in chronological order
-5. For an Online event, add the event time to a UserId -> Time map.
+5. For an Online event, add the event time to a UserId->Time map.
    - If there is already an Online event, simply overwrite it, as we are trying to make time ranges 
 6. For an Offline event, pop the preceding Online event from the map
    - If there is no Online event, we can't build a time range, so drop it
-   - If the Online->Offline duration is over some threshold, then drop it as being abnormally long and likely erroneous. 
-7. For each bucket covered in by the Online->Offline time range, increment the bucket's count by 1.
+   - Take into account when VRCX was or wasn't running, truncating time ranges as necessary
+7. For each bucket covered by the Online->Offline time range, increment the bucket's count by 1.
+8. Optionally, normalize friend online counts according to when VRCX was actually collecting data in order to remove bias.
 
 The buckets now contain the number of friends online during that time. This can be trivially exported to a tab-delimited file and charted as a histogram.
