@@ -5,26 +5,19 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
-use chrono::{Datelike, DateTime, Duration, DurationRound, Local, NaiveDate, Timelike, Utc, Weekday};
+use chrono::{Datelike, DateTime, Duration, DurationRound, Local, Timelike, Utc, Weekday};
 use chrono::naive::NaiveTime;
 use num_traits::cast::FromPrimitive;
 use rusqlite::{Connection, OpenFlags};
 
 use config::Configuration;
 
+use crate::constants::{COLUMN_INDEX_CREATED_AT, DAYS_PER_WEEK, MINUTES_PER_DAY, SECONDS_PER_MINUTE};
+use crate::dto::{BucketValue, OnlineOfflineEventType, Row, TimeSpan, VrcxStartStopEvent, VrcxStartStopEventType};
+
 mod config;
-
-const DAYS_PER_WEEK: usize = 7;
-const HOURS_PER_DAY: u32 = 24;
-const MINUTES_PER_HOUR: u32 = 60;
-const SECONDS_PER_MINUTE: u32 = 60;
-const MINUTES_PER_DAY: u32 = HOURS_PER_DAY * MINUTES_PER_HOUR;
-
-// indices of the columns we get back in our sqlite query result set
-const COLUMN_INDEX_CREATED_AT: usize = 0;
-const COLUMN_INDEX_USER_ID: usize = 1;
-const COLUMN_INDEX_DISPLAY_NAME: usize = 2;
-const COLUMN_INDEX_EVENT_TYPE: usize = 3;
+mod dto;
+mod constants;
 
 fn main() {
     // load the config
@@ -362,143 +355,8 @@ fn is_user_allowed(user_id: &str, friend_ids: &Option<HashSet<String>>) -> bool 
     }
 }
 
-/// value of a bucket. This represents an n-minute window on a certain day of the week. For example, 8:00 to 8:10 on a Monday.
-#[derive(Clone, Default)]
-struct BucketValue {
-    /// total number of online friends seen for this bucket
-    online_count: u32,
-    /// records individual dates VRCX has been active on for this bucket
-    vrcx_activity_dates: HashSet<NaiveDate>,
-}
-
-impl BucketValue {
-    /// indicate that a friend is online during this bucket
-    fn increment(&mut self) {
-        self.online_count += 1;
-    }
-
-    /// remember that VRCX was running during the provided date for this bucket
-    fn register_date(&mut self, datetime: DateTime<Local>) {
-        self.vrcx_activity_dates.insert(datetime.date_naive());
-    }
-
-    /// number of distinct dates VRCX was running during for this bucket
-    fn total_dates(&self) -> usize {
-        self.vrcx_activity_dates.len()
-    }
-}
-
-/// represents a row from the friend online/offline table
-struct Row {
-    created_at: DateTime<Utc>,
-    user_id: String,
-    display_name: String,
-    event_type: OnlineOfflineEventType,
-}
-
-impl TryFrom<&rusqlite::Row<'_>> for Row {
-    type Error = rusqlite::Error;
-
-    fn try_from(row: &rusqlite::Row<'_>) -> Result<Self, Self::Error> {
-        let created_at: String = row.get(COLUMN_INDEX_CREATED_AT)?;
-        let created_at: DateTime<Utc> = created_at.parse::<DateTime<Utc>>().unwrap();
-
-        let user_id: String = row.get(COLUMN_INDEX_USER_ID)?;
-
-        let display_name: String = row.get(COLUMN_INDEX_DISPLAY_NAME)?;
-
-        let event_type: String = row.get(COLUMN_INDEX_EVENT_TYPE)?;
-        let event_type: OnlineOfflineEventType = event_type.as_str().try_into()?;
-
-        Ok(Row {
-            created_at,
-            user_id,
-            display_name,
-            event_type,
-        })
-    }
-}
-
-/// the type of an online/offline event
-enum OnlineOfflineEventType {
-    Online,
-    Offline,
-}
-
-impl TryFrom<&str> for OnlineOfflineEventType {
-    type Error = rusqlite::Error;
-
-    fn try_from(value: &str) -> Result<Self, Self::Error> {
-        match value {
-            "Online" => Ok(OnlineOfflineEventType::Online),
-            "Offline" => Ok(OnlineOfflineEventType::Offline),
-            _ => Err(rusqlite::Error::InvalidColumnType(COLUMN_INDEX_EVENT_TYPE, value.to_string(), rusqlite::types::Type::Text))
-        }
-    }
-}
-
 /// parse a timestamp from a sqlite result
 fn parse_created_at(row: &rusqlite::Row<'_>) -> Result<DateTime<Utc>, rusqlite::Error> {
     let created_at: String = row.get(COLUMN_INDEX_CREATED_AT)?;
     Ok(created_at.parse::<DateTime<Utc>>().unwrap())
-}
-
-struct VrcxStartStopEvent {
-    timestamp: DateTime<Utc>,
-    event: VrcxStartStopEventType,
-}
-
-impl VrcxStartStopEvent {
-    fn start(timestamp: DateTime<Utc>) -> VrcxStartStopEvent {
-        VrcxStartStopEvent {
-            timestamp,
-            event: VrcxStartStopEventType::Start,
-        }
-    }
-
-    fn stop(timestamp: DateTime<Utc>) -> VrcxStartStopEvent {
-        VrcxStartStopEvent {
-            timestamp,
-            event: VrcxStartStopEventType::Stop,
-        }
-    }
-}
-
-enum VrcxStartStopEventType {
-    Start,
-    Stop,
-}
-
-#[derive(Copy, Clone)]
-pub struct TimeSpan {
-    pub start: DateTime<Utc>,
-    pub stop: DateTime<Utc>,
-}
-
-impl TimeSpan {
-    pub fn new(start: DateTime<Utc>, stop: DateTime<Utc>) -> TimeSpan {
-        TimeSpan {
-            start,
-            stop,
-        }
-    }
-
-    pub fn is_negative_or_zero(self) -> bool {
-        self.stop <= self.start
-    }
-
-    pub fn duration(self) -> Duration {
-        self.stop.signed_duration_since(self.start)
-    }
-
-    /// returns the intersection, or None if the intersection was nonexistent or zero
-    pub fn intersect(self, other: TimeSpan) -> Option<TimeSpan> {
-        let start = self.start.max(other.start);
-        let stop = self.stop.min(other.stop);
-        if stop > start {
-            Some(TimeSpan::new(start, stop))
-        } else {
-            None
-        }
-    }
 }
