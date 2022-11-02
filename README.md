@@ -16,9 +16,9 @@ For the best results, you'll need to have used VRCX for a reasonably long time t
 
 ## Output
 
-Here's an example chart generated from approximately 200 friends worth of data:
+Here's an example chart generated from approximately 200 friends worth of data captured over 2 years. VRCX was running for ~900 hours out of that time span.
 
-![example chart](doc/example-chart.png)
+![example chart](doc/example-chart.svg)
 
 ## FAQ
 
