@@ -32,7 +32,9 @@ fn main() {
     let config: Configuration = toml::from_str(&config_string).unwrap();
 
     // derive constants from config
-    let buckets_per_day: usize = usize::try_from(MINUTES_PER_DAY / config.bucket_duration_minutes).unwrap();
+    let (buckets_per_day, buckets_per_day_remainder) = (MINUTES_PER_DAY / config.bucket_duration_minutes, MINUTES_PER_DAY % config.bucket_duration_minutes);
+    assert_eq!(buckets_per_day_remainder, 0, "bucket_duration_minutes does not perfectly divide a day");
+    let buckets_per_day: usize = usize::try_from(buckets_per_day).unwrap();
     let bucket_duration_seconds: u32 = config.bucket_duration_minutes * SECONDS_PER_MINUTE;
     let bucket_duration: Duration = Duration::minutes(i64::try_from(config.bucket_duration_minutes).unwrap());
     let maximum_online_time: Duration = Duration::hours(i64::try_from(config.maximum_online_time_hours).unwrap());
@@ -157,7 +159,7 @@ fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, buckets: 
         for day in 0..DAYS_PER_WEEK {
             let buckets_for_day = buckets.get(day).unwrap();
             let bucket_value = buckets_for_day.get(bucket_index).unwrap();
-            let vrcx_activity_count = u32::try_from(bucket_value.total_dates()).unwrap();
+            let vrcx_activity_count = bucket_value.total_dates();
             let online_count = bucket_value.online_count;
 
             /* This next line requires some explanation. TL;DR: it's to account for bias in when data is recorded.
@@ -175,7 +177,7 @@ fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, buckets: 
              * The solution is to record the number of days for which a bucket is "active", and divide the friend online count by that activity count.
              * This normalizes the data. For Sunday, 180 / 90 = 2. For Wednesday, 10 / 5 = 2.
              */
-            let normalized_online_activity: f64 = f64::from(online_count) / f64::from(vrcx_activity_count);
+            let normalized_online_activity: f64 = online_count as f64 / vrcx_activity_count as f64;
 
             print!("\t{}", normalized_online_activity);
         }
