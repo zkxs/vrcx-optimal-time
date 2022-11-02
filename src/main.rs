@@ -82,7 +82,7 @@ fn main() {
 
                     // use any VRCX events available to reason that VRCX is running during a given time range
                     let time_span = TimeSpan::new(event_timestamp_1, event_timestamp_2);
-                    update_bucket_dates_for_range(bucket_duration, config.bucket_duration_minutes, time_span, buckets.as_mut_slice());
+                    register_bucket_dates_for_range(bucket_duration, config.bucket_duration_minutes, time_span, buckets.as_mut_slice());
                 } else if vrcx_running {
                     // duration was outside threshold, so assume VRCX is *not* running for this range (which may be quite long)
                     // also, VRCX was running in the previous range, therefore we need to push a stop event
@@ -252,21 +252,47 @@ fn update_bucket_counts_for_range(bucket_duration: Duration, bucket_duration_min
 }
 
 /// register this range's dates as active for the relevant buckets
-fn update_bucket_dates_for_range(bucket_duration: Duration, bucket_duration_minutes: u32, time_span: TimeSpan, buckets: &mut [Vec<BucketValue>]) {
+fn register_bucket_dates_for_range(bucket_duration: Duration, bucket_duration_minutes: u32, time_span: TimeSpan, buckets: &mut [Vec<BucketValue>]) {
     let end_time = time_span.stop.with_timezone(&Local);
-    let mut start_time = time_span.start.with_timezone(&Local) + (bucket_duration - Duration::seconds(1)); // ensure we only count the start bucket as active if VRCX was running for the WHOLE bucket
-    start_time = start_time.duration_trunc(bucket_duration).unwrap();
+    let start_time = time_span.start.with_timezone(&Local);
+    let first_bucket_start_time = start_time.duration_trunc(bucket_duration).unwrap();
+    // start at first WHOLE bucket
+    let mut current_time = if first_bucket_start_time == start_time {
+        first_bucket_start_time
+    } else {
+        let second_bucket_start_time = first_bucket_start_time + bucket_duration;
 
-    while start_time < end_time {
-        let weekday = start_time.weekday();
-        let day_index = usize::try_from(weekday.num_days_from_monday()).unwrap();
-        let time = start_time.time();
-        let minutes_of_day = u32::try_from(time.signed_duration_since(NaiveTime::default()).num_minutes()).unwrap();
-        let bucket_index = usize::try_from(minutes_of_day / bucket_duration_minutes).unwrap();
-        buckets[day_index][bucket_index].register_date(start_time);
+        // handle the first, partial bucket
+        let first_bucket_duration = TimeSpan::new(first_bucket_start_time.with_timezone(&Utc), second_bucket_start_time.with_timezone(&Utc)).duration();
+        if first_bucket_duration > bucket_duration / 2 {
+            register_bucket_date(bucket_duration_minutes, second_bucket_start_time, buckets);
+        }
 
-        start_time += bucket_duration;
+        second_bucket_start_time
+    };
+
+    // process each WHOLE bucket
+    while current_time < end_time {
+        register_bucket_date(bucket_duration_minutes, current_time, buckets);
+        current_time += bucket_duration;
     }
+
+    // handle any remaining time
+    let last_bucket_start_time = current_time;
+    let last_bucket_duration = TimeSpan::new(last_bucket_start_time.with_timezone(&Utc), time_span.stop).duration();
+    if last_bucket_duration > bucket_duration / 2 {
+        register_bucket_date(bucket_duration_minutes, last_bucket_start_time, buckets);
+    }
+}
+
+#[inline]
+fn register_bucket_date(bucket_duration_minutes: u32, bucket_time: DateTime<Local>, buckets: &mut [Vec<BucketValue>]) {
+    let weekday = bucket_time.weekday();
+    let day_index = usize::try_from(weekday.num_days_from_monday()).unwrap();
+    let time = bucket_time.time();
+    let minutes_of_day = u32::try_from(time.signed_duration_since(NaiveTime::default()).num_minutes()).unwrap();
+    let bucket_index = usize::try_from(minutes_of_day / bucket_duration_minutes).unwrap();
+    buckets[day_index][bucket_index].register_date(bucket_time);
 }
 
 /// print bucket data to console
@@ -440,20 +466,35 @@ enum VrcxStartStopEventType {
 }
 
 #[derive(Copy, Clone)]
-struct TimeSpan {
-    start: DateTime<Utc>,
-    stop: DateTime<Utc>,
+pub struct TimeSpan {
+    pub start: DateTime<Utc>,
+    pub stop: DateTime<Utc>,
 }
 
 impl TimeSpan {
-    fn new(start: DateTime<Utc>, stop: DateTime<Utc>) -> TimeSpan {
+    pub fn new(start: DateTime<Utc>, stop: DateTime<Utc>) -> TimeSpan {
         TimeSpan {
             start,
             stop,
         }
     }
 
-    fn is_negative_or_zero(&self) -> bool {
+    pub fn is_negative_or_zero(self) -> bool {
         self.stop <= self.start
     }
-}
+
+    pub fn duration(self) -> Duration {
+        self.stop.signed_duration_since(self.start)
+    }
+
+    /// returns the intersection, or None if the intersection was nonexistent or zero
+    pub fn intersect(self, other: TimeSpan) -> Option<TimeSpan> {
+        let start = self.start.max(other.start);
+        let stop = self.stop.min(other.stop);
+        if stop > start {
+            Some(TimeSpan::new(start, stop))
+        } else {
+            None
+        }
+    }
+ }
