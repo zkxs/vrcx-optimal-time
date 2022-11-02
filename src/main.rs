@@ -162,17 +162,6 @@ fn update_bucket_dates_for_range(bucket_duration: Duration, bucket_duration_minu
     }
 }
 
-/// register this event's date as active for the event's bucket
-fn update_bucket_dates_for_event(bucket_duration_minutes: u32, event_timestamp: DateTime<Utc>, buckets: &mut [Vec<BucketValue>]) {
-    let event_timestamp = event_timestamp.with_timezone(&Local);
-    let weekday = event_timestamp.weekday();
-    let day_index = usize::try_from(weekday.num_days_from_monday()).unwrap();
-    let time = event_timestamp.time();
-    let minutes_of_day = u32::try_from(time.signed_duration_since(NaiveTime::default()).num_minutes()).unwrap();
-    let bucket_index = usize::try_from(minutes_of_day / bucket_duration_minutes).unwrap();
-    buckets[day_index][bucket_index].register_date(event_timestamp);
-}
-
 /// print bucket data to console
 fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, buckets: Vec<Vec<BucketValue>>) {
     // header
