@@ -38,6 +38,7 @@ fn main() {
     let bucket_duration_seconds: u32 = config.bucket_duration_minutes * SECONDS_PER_MINUTE;
     let bucket_duration: Duration = Duration::minutes(i64::try_from(config.bucket_duration_minutes).unwrap());
     let maximum_online_time: Duration = Duration::hours(i64::try_from(config.maximum_online_time_hours).unwrap());
+    let vrcx_running_detection_threshold: Duration = Duration::minutes(i64::try_from(config.vrcx_running_detection_threshold_minutes).unwrap());
 
     // open the sqlite database
     let db = Connection::open_with_flags(
@@ -51,15 +52,25 @@ fn main() {
     let all_events_statement = format!("select created_at from {stripped_user_id}_feed_avatar union select created_at from {stripped_user_id}_feed_gps union select created_at from {stripped_user_id}_feed_status union select created_at from {stripped_user_id}_friend_log_history order by created_at asc");
     let mut all_events_statement = db.prepare(&all_events_statement).unwrap();
     let all_event_timestamps = all_events_statement.query_map((), parse_created_at).unwrap();
+    let all_event_timestamps: Vec<DateTime<Utc>> = all_event_timestamps
+        .map(|event| event.unwrap())
+        .collect();
 
     // set up data structures we'll need for the VRCX running analysis
     let mut buckets = build_daily_buckets(buckets_per_day);
 
     // process all event timestamps
-    for event_timestamp in all_event_timestamps {
-        let event_timestamp = event_timestamp.unwrap();
-        // use any VRCX events available to reason that VRCX is running during a given time
-        update_bucket_dates_for_event(config.bucket_duration_minutes, event_timestamp, buckets.as_mut_slice());
+    for window in all_event_timestamps.windows(2) {
+        match window {
+            &[event_timestamp_1, event_timestamp_2] => {
+                let duration = event_timestamp_2.signed_duration_since(event_timestamp_1);
+                if duration <= vrcx_running_detection_threshold {
+                    // use any VRCX events available to reason that VRCX is running during a given time
+                    update_bucket_dates_for_range(bucket_duration, config.bucket_duration_minutes, event_timestamp_1, event_timestamp_2, buckets.as_mut_slice());
+                }
+            }
+            _ => unreachable!()
+        }
     }
 
     // build and run the online/offline query
@@ -127,6 +138,24 @@ fn update_bucket_counts_for_range(bucket_duration: Duration, bucket_duration_min
         buckets[day_index][bucket_index].increment();
 
         // we're assuming that VRCX is actually running for this whole range, so update the VRCX running dates as well...
+        buckets[day_index][bucket_index].register_date(start_time);
+
+        start_time += bucket_duration;
+    }
+}
+
+/// register this range's dates as active for the relevant buckets
+fn update_bucket_dates_for_range(bucket_duration: Duration, bucket_duration_minutes: u32, start_time: DateTime<Utc>, end_time: DateTime<Utc>, buckets: &mut [Vec<BucketValue>]) {
+    let end_time = end_time.with_timezone(&Local);
+    let mut start_time = start_time.with_timezone(&Local);
+    start_time = start_time.duration_trunc(bucket_duration).unwrap();
+
+    while start_time < end_time {
+        let weekday = start_time.weekday();
+        let day_index = usize::try_from(weekday.num_days_from_monday()).unwrap();
+        let time = start_time.time();
+        let minutes_of_day = u32::try_from(time.signed_duration_since(NaiveTime::default()).num_minutes()).unwrap();
+        let bucket_index = usize::try_from(minutes_of_day / bucket_duration_minutes).unwrap();
         buckets[day_index][bucket_index].register_date(start_time);
 
         start_time += bucket_duration;

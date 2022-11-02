@@ -7,6 +7,9 @@ vrcx_db_path = "C:\\Users\\johnsmith\\AppData\\Roaming\\VRCX"
 # Maximum time a friend can remain online before it's considered a fluke (such as VRCX missing an Offline event).
 maximum_online_time_hours = 12
 
+# If two events are this far apart or less, then assume VRCX was running the whole time
+vrcx_running_detection_threshold_minutes = 30
+
 # How long should a bucket be?
 bucket_duration_minutes = 10
 
