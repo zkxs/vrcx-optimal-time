@@ -4,11 +4,13 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use config::Configuration;
+
+use chrono::{Datelike, DateTime, Duration, DurationRound, Local, NaiveDate, Timelike, Utc, Weekday};
 use chrono::naive::NaiveTime;
-use chrono::{Datelike, DateTime, Duration, DurationRound, Local, Timelike, Utc, Weekday};
 use num_traits::cast::FromPrimitive;
 use rusqlite::{Connection, OpenFlags};
+
+use config::Configuration;
 
 mod config;
 
@@ -23,8 +25,6 @@ const COLUMN_INDEX_CREATED_AT: usize = 0;
 const COLUMN_INDEX_USER_ID: usize = 1;
 const COLUMN_INDEX_DISPLAY_NAME: usize = 2;
 const COLUMN_INDEX_EVENT_TYPE: usize = 3;
-
-static TABLE_SUFFIX: &str = "_feed_online_offline";
 
 fn main() {
     // load the config
@@ -44,18 +44,31 @@ fn main() {
             | OpenFlags::SQLITE_OPEN_URI
             | OpenFlags::SQLITE_OPEN_NO_MUTEX).unwrap();
 
-    // build and run the query
+    // build and run the all events query
     let stripped_user_id = config.your_user_id.replace('-', "").replace('_', "");
-    let table_name = format!("{}{}", stripped_user_id, TABLE_SUFFIX);
-    let statement = format!("select created_at, user_id, display_name, type from {} order by id", table_name);
-    let mut statement = db.prepare(&statement).unwrap();
-    let user_online_offline_events = statement.query_map((), |row| Row::try_from(row)).unwrap();
+    let all_events_statement = format!("select created_at from {stripped_user_id}_feed_avatar union select created_at from {stripped_user_id}_feed_gps union select created_at from {stripped_user_id}_feed_status union select created_at from {stripped_user_id}_friend_log_history order by created_at asc");
+    let mut all_events_statement = db.prepare(&all_events_statement).unwrap();
+    let all_event_timestamps = all_events_statement.query_map((), parse_created_at).unwrap();
 
-    // set up data structures we'll need for the procedure
+    // set up data structures we'll need for the VRCX running analysis
+    let mut buckets = build_daily_buckets(buckets_per_day);
+
+    // process all event timestamps
+    for event_timestamp in all_event_timestamps {
+        let event_timestamp = event_timestamp.unwrap();
+        // use any VRCX events available to reason that VRCX is running during a given time
+        update_bucket_dates_for_event(config.bucket_duration_minutes, event_timestamp, buckets.as_mut_slice());
+    }
+
+    // build and run the online/offline query
+    let online_offline_statement = format!("select created_at, user_id, display_name, type from {stripped_user_id}_feed_online_offline order by id");
+    let mut online_offline_statement = db.prepare(&online_offline_statement).unwrap();
+    let user_online_offline_events = online_offline_statement.query_map((), |row| Row::try_from(row)).unwrap();
+
+    // set up data structures we'll need for the online/offline analysis
     let mut user_online_time: HashMap<String, DateTime<Utc>> = HashMap::new();
-    let mut buckets: Vec<Vec<u32>> = build_buckets(buckets_per_day);
 
-    // process the results
+    // process the user online/offline events
     for row in user_online_offline_events {
         let row = row.unwrap();
         if is_user_allowed(&row.user_id, &config.friend_ids) {
@@ -78,7 +91,7 @@ fn main() {
                             // debug print this event
                             //println!("{:<18} {}", range.to_string(), row.display_name);
 
-                            update_buckets(bucket_duration, config.bucket_duration_minutes, online_time, row.created_at, buckets.as_mut_slice());
+                            update_bucket_counts_for_range(bucket_duration, config.bucket_duration_minutes, online_time, row.created_at, buckets.as_mut_slice());
                         } // else, the range was too long, so drop the event
                     } // else, no matching online time, so drop the event
                 }
@@ -91,12 +104,12 @@ fn main() {
 }
 
 /// build buckets according to configured bucket size
-fn build_buckets(buckets_per_day: usize) -> Vec<Vec<u32>> {
-    vec![vec![0; buckets_per_day]; DAYS_PER_WEEK]
+fn build_daily_buckets(buckets_per_day: usize) -> Vec<Vec<BucketValue>> {
+    vec![vec![BucketValue::default(); buckets_per_day]; DAYS_PER_WEEK]
 }
 
-/// update buckets that a provided range encompasses
-fn update_buckets(bucket_duration: Duration, bucket_duration_minutes: u32, start_time: DateTime<Utc>, end_time: DateTime<Utc>, buckets: &mut [Vec<u32>]) {
+/// update bucket counts that a provided range encompasses
+fn update_bucket_counts_for_range(bucket_duration: Duration, bucket_duration_minutes: u32, start_time: DateTime<Utc>, end_time: DateTime<Utc>, buckets: &mut [Vec<BucketValue>]) {
     let end_time = end_time.with_timezone(&Local);
     let mut start_time = start_time.with_timezone(&Local);
     start_time = start_time.duration_trunc(bucket_duration).unwrap();
@@ -107,14 +120,30 @@ fn update_buckets(bucket_duration: Duration, bucket_duration_minutes: u32, start
         let time = start_time.time();
         let minutes_of_day = u32::try_from(time.signed_duration_since(NaiveTime::default()).num_minutes()).unwrap();
         let bucket_index = usize::try_from(minutes_of_day / bucket_duration_minutes).unwrap();
-        buckets[day_index][bucket_index] += 1;
+
+        // increment the friend online count
+        buckets[day_index][bucket_index].increment();
+
+        // we're assuming that VRCX is actually running for this whole range, so update the VRCX running dates as well...
+        buckets[day_index][bucket_index].register_date(start_time);
 
         start_time += bucket_duration;
     }
 }
 
+/// register this event's date as active for the event's bucket
+fn update_bucket_dates_for_event(bucket_duration_minutes: u32, event_timestamp: DateTime<Utc>, buckets: &mut [Vec<BucketValue>]) {
+    let event_timestamp = event_timestamp.with_timezone(&Local);
+    let weekday = event_timestamp.weekday();
+    let day_index = usize::try_from(weekday.num_days_from_monday()).unwrap();
+    let time = event_timestamp.time();
+    let minutes_of_day = u32::try_from(time.signed_duration_since(NaiveTime::default()).num_minutes()).unwrap();
+    let bucket_index = usize::try_from(minutes_of_day / bucket_duration_minutes).unwrap();
+    buckets[day_index][bucket_index].register_date(event_timestamp);
+}
+
 /// print bucket data to console
-fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, buckets: Vec<Vec<u32>>) {
+fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, buckets: Vec<Vec<BucketValue>>) {
     // header
     print!("bucket");
     for day in 0..DAYS_PER_WEEK {
@@ -127,8 +156,29 @@ fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, buckets: 
         print!("{}", bucket_index_to_label(bucket_duration_seconds, bucket_index));
         for day in 0..DAYS_PER_WEEK {
             let buckets_for_day = buckets.get(day).unwrap();
-            let count = buckets_for_day.get(bucket_index).unwrap();
-            print!("\t{}", count);
+            let bucket_value = buckets_for_day.get(bucket_index).unwrap();
+            let vrcx_activity_count = u32::try_from(bucket_value.total_dates()).unwrap();
+            let online_count = bucket_value.online_count;
+
+            /* This next line requires some explanation. TL;DR: it's to account for bias in when data is recorded.
+             *
+             * Imagine you started using VRCX 100 weeks ago (nearly two years). You don't always run VRCX, because you
+             * turn your computer off sometimes. Lets say that on Saturdays you have a 90% chance of having VRCX running,
+             * while on Wednesdays you only have a 5% chance. Lets call a bucket "active" for a day if VRCX was running.
+             * This means a given Saturday bucket would have been active for ~90 days, but a Wednesday bucket would only have
+             * been active for ~5 days.
+             *
+             * Next, imagine you a friend who has zero reason to their schedule, and has a perfectly equal chance of being online
+             * at any given time. Lets say they are online 50% of the time. Without accounting for the bias introduced by when you run
+             * VRCX, this friend would appear 18x more active on Sundays than Wednesdays, which is clearly not true. So you'd see say,
+             * 180 hits for Sunday and 10 hits for Wednesday.
+             *
+             * The solution is to record the number of days for which a bucket is "active", and divide the friend online count by that activity count.
+             * This normalizes the data. For Sunday, 180 / 90 = 2. For Wednesday, 10 / 5 = 2.
+             */
+            let normalized_online_activity: f64 = f64::from(online_count) / f64::from(vrcx_activity_count);
+
+            print!("\t{}", normalized_online_activity);
         }
         println!();
     }
@@ -153,6 +203,32 @@ fn is_user_allowed(user_id: &str, friend_ids: &Option<HashSet<String>>) -> bool 
     } else {
         // if friend ids is unset, then allow every user id
         true
+    }
+}
+
+/// value of a bucket. This represents an n-minute window on a certain day of the week. For example, 8:00 to 8:10 on a Monday.
+#[derive(Clone, Default)]
+struct BucketValue {
+    /// total number of online friends seen for this bucket
+    online_count: u32,
+    /// records individual dates VRCX has been active on for this bucket
+    vrcx_activity_dates: HashSet<NaiveDate>,
+}
+
+impl BucketValue {
+    /// indicate that a friend is online during this bucket
+    fn increment(&mut self) {
+        self.online_count += 1;
+    }
+
+    /// remember that VRCX was running during the provided date for this bucket
+    fn register_date(&mut self, datetime: DateTime<Local>) {
+        self.vrcx_activity_dates.insert(datetime.date_naive());
+    }
+
+    /// number of distinct dates VRCX was running during for this bucket
+    fn total_dates(&self) -> usize {
+        self.vrcx_activity_dates.len()
     }
 }
 
@@ -203,4 +279,10 @@ impl TryFrom<&str> for EventType {
             _ => Err(rusqlite::Error::InvalidColumnType(COLUMN_INDEX_EVENT_TYPE, value.to_string(), rusqlite::types::Type::Text))
         }
     }
+}
+
+/// parse a timestamp from a sqlite result
+fn parse_created_at(row: &rusqlite::Row<'_>) -> Result<DateTime<Utc>, rusqlite::Error> {
+    let created_at: String = row.get(COLUMN_INDEX_CREATED_AT)?;
+    Ok(created_at.parse::<DateTime<Utc>>().unwrap())
 }
