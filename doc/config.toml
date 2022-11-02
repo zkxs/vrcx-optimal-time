@@ -4,9 +4,6 @@ your_user_id = "usr_10581b0d-08d2-4742-8e8c-e8b698696d33"
 # Path to your VRCX database. It'll be whatever "%appdata%\VRCX\VRCX.sqlite3" expands to.
 vrcx_db_path = "C:\\Users\\johnsmith\\AppData\\Roaming\\VRCX"
 
-# Maximum time a friend can remain online before it's considered a fluke (such as VRCX missing an Offline event).
-maximum_online_time_hours = 12
-
 # If two events are this far apart or less, then assume VRCX was running the whole time
 vrcx_running_detection_threshold_minutes = 30
 
