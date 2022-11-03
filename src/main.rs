@@ -8,7 +8,7 @@ use std::fs;
 use chrono::{Datelike, DateTime, Duration, DurationRound, Local, Timelike, Utc, Weekday};
 use chrono::naive::NaiveTime;
 use num_traits::cast::FromPrimitive;
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, DropBehavior, OpenFlags};
 
 use config::Configuration;
 
@@ -33,109 +33,115 @@ fn main() {
     let vrcx_running_detection_threshold: Duration = Duration::minutes(i64::try_from(config.vrcx_running_detection_threshold_minutes).unwrap());
 
     // open the sqlite database
-    let db = Connection::open_with_flags(
+    let mut db = Connection::open_with_flags(
         config.vrcx_db_path,
         OpenFlags::SQLITE_OPEN_READ_ONLY
             | OpenFlags::SQLITE_OPEN_URI
             | OpenFlags::SQLITE_OPEN_NO_MUTEX).unwrap();
 
-    // build and run the all events query
-    let stripped_user_id = config.your_user_id.replace('-', "").replace('_', "");
-    let all_events_statement = format!("select created_at from {stripped_user_id}_feed_avatar union select created_at from {stripped_user_id}_feed_gps union select created_at from {stripped_user_id}_feed_online_offline union select created_at from {stripped_user_id}_feed_status union select created_at from {stripped_user_id}_friend_log_history order by created_at asc;");
-    let mut all_events_statement = db.prepare(&all_events_statement).unwrap();
-    let all_event_timestamps = all_events_statement.query_map((), parse_created_at).unwrap();
-    let all_event_timestamps: Vec<DateTime<Utc>> = all_event_timestamps
-        .map(|event| event.unwrap())
-        .collect();
-
     // set up data structures we'll need for the VRCX running analysis
     let mut buckets = build_daily_buckets(buckets_per_day);
     let mut vrcx_start_stop_events: Vec<VrcxStartStopEvent> = Vec::new();
 
-    // process all event timestamps
-    let mut vrcx_running: bool = false;
-    for window in all_event_timestamps.windows(2) {
-        match window {
-            &[event_timestamp_1, event_timestamp_2] => {
-                let duration = event_timestamp_2.signed_duration_since(event_timestamp_1);
-                assert!(duration >= Duration::zero()); // assert that data is, in fact, ascending
-                if duration <= vrcx_running_detection_threshold && duration >= Duration::zero() {
-                    // we can skip over zero-length durations
-                    // duration between events was within the threshold, so assume VRCX is running for this entire time range
+    // build and run the all events query
+    let stripped_user_id = config.your_user_id.replace('-', "").replace('_', "");
+    let all_events_statement = format!("select created_at from {stripped_user_id}_feed_avatar union select created_at from {stripped_user_id}_feed_gps union select created_at from {stripped_user_id}_feed_online_offline union select created_at from {stripped_user_id}_feed_status union select created_at from {stripped_user_id}_friend_log_history order by created_at asc;");
 
-                    if !vrcx_running {
-                        // vrcx just started running
+    // run a big transactional read
+    {
+        let mut transaction = db.transaction().unwrap();
+        transaction.set_drop_behavior(DropBehavior::Commit);
+        let mut all_events_statement = transaction.prepare(&all_events_statement).unwrap();
+        let all_event_timestamps = all_events_statement.query_map((), parse_created_at).unwrap();
+        let all_event_timestamps: Vec<DateTime<Utc>> = all_event_timestamps
+            .map(|event| event.unwrap())
+            .collect();
 
-                        // the previous event should have been a stop event (or empty)
-                        debug_assert!(matches!(vrcx_start_stop_events.last(), None) || matches!(vrcx_start_stop_events.last(), Some(x) if matches!(x.event, VrcxStartStopEventType::Stop)));
+        // process all event timestamps
+        let mut vrcx_running: bool = false;
+        for window in all_event_timestamps.windows(2) {
+            match window {
+                &[event_timestamp_1, event_timestamp_2] => {
+                    let duration = event_timestamp_2.signed_duration_since(event_timestamp_1);
+                    assert!(duration >= Duration::zero()); // assert that data is, in fact, ascending
+                    if duration <= vrcx_running_detection_threshold && duration >= Duration::zero() {
+                        // we can skip over zero-length durations
+                        // duration between events was within the threshold, so assume VRCX is running for this entire time range
 
-                        vrcx_running = true;
-                        vrcx_start_stop_events.push(VrcxStartStopEvent::start(event_timestamp_1));
-                    } // else, if vrcx was already running there's nothing for us to do
+                        if !vrcx_running {
+                            // vrcx just started running
 
-                    // use any VRCX events available to reason that VRCX is running during a given time range
-                    let time_span = TimeSpan::new(event_timestamp_1, event_timestamp_2);
-                    register_bucket_dates_for_range(bucket_duration, config.bucket_duration_minutes, time_span, buckets.as_mut_slice());
-                } else if vrcx_running {
-                    // duration was outside threshold, so assume VRCX is *not* running for this range (which may be quite long)
-                    // also, VRCX was running in the previous range, therefore we need to push a stop event
+                            // the previous event should have been a stop event (or empty)
+                            debug_assert!(matches!(vrcx_start_stop_events.last(), None) || matches!(vrcx_start_stop_events.last(), Some(x) if matches!(x.event, VrcxStartStopEventType::Stop)));
 
-                    // the previous event should have been a start event
-                    debug_assert!(matches!(vrcx_start_stop_events.last(), Some(x) if matches!(x.event, VrcxStartStopEventType::Start)));
+                            vrcx_running = true;
+                            vrcx_start_stop_events.push(VrcxStartStopEvent::start(event_timestamp_1));
+                        } // else, if vrcx was already running there's nothing for us to do
 
-                    vrcx_running = false;
-                    vrcx_start_stop_events.push(VrcxStartStopEvent::stop(event_timestamp_1));
+                        // use any VRCX events available to reason that VRCX is running during a given time range
+                        let time_span = TimeSpan::new(event_timestamp_1, event_timestamp_2);
+                        register_bucket_dates_for_range(bucket_duration, config.bucket_duration_minutes, time_span, buckets.as_mut_slice());
+                    } else if vrcx_running {
+                        // duration was outside threshold, so assume VRCX is *not* running for this range (which may be quite long)
+                        // also, VRCX was running in the previous range, therefore we need to push a stop event
+
+                        // the previous event should have been a start event
+                        debug_assert!(matches!(vrcx_start_stop_events.last(), Some(x) if matches!(x.event, VrcxStartStopEventType::Start)));
+
+                        vrcx_running = false;
+                        vrcx_start_stop_events.push(VrcxStartStopEvent::stop(event_timestamp_1));
+                    }
                 }
+                _ => unreachable!()
             }
-            _ => unreachable!()
         }
-    }
 
-    // push the final stop event, if needed
-    if !matches!(vrcx_start_stop_events.last().unwrap().event, VrcxStartStopEventType::Stop) {
-        vrcx_start_stop_events.push(VrcxStartStopEvent::stop(*all_event_timestamps.last().unwrap()));
-    }
+        // push the final stop event, if needed
+        if !matches!(vrcx_start_stop_events.last().unwrap().event, VrcxStartStopEventType::Stop) {
+            vrcx_start_stop_events.push(VrcxStartStopEvent::stop(*all_event_timestamps.last().unwrap()));
+        }
 
-    // build and run the online/offline query
-    let online_offline_statement = format!("select created_at, user_id, display_name, type from {stripped_user_id}_feed_online_offline order by id");
-    let mut online_offline_statement = db.prepare(&online_offline_statement).unwrap();
-    let user_online_offline_events = online_offline_statement.query_map((), |row| Row::try_from(row)).unwrap();
+        // build and run the online/offline query
+        let online_offline_statement = format!("select created_at, user_id, display_name, type from {stripped_user_id}_feed_online_offline order by id");
+        let mut online_offline_statement = transaction.prepare(&online_offline_statement).unwrap();
+        let user_online_offline_events = online_offline_statement.query_map((), |row| Row::try_from(row)).unwrap();
 
-    // set up data structures we'll need for the online/offline analysis
-    let mut user_online_time: HashMap<String, DateTime<Utc>> = HashMap::new();
+        // set up data structures we'll need for the online/offline analysis
+        let mut user_online_time: HashMap<String, DateTime<Utc>> = HashMap::new();
 
-    // process the user online/offline events
-    for row in user_online_offline_events {
-        let row = row.unwrap();
-        if is_user_allowed(&row.user_id, &config.friend_ids) {
-            match row.event_type {
-                OnlineOfflineEventType::Online => {
-                    // it is intentional that this overwrites previous Online events,
-                    // because given two Online events in a row we should drop the first one
-                    user_online_time.insert(row.user_id, row.created_at);
-                }
-                OnlineOfflineEventType::Offline => {
-                    let online_time = user_online_time.remove(&row.user_id);
-                    if let Some(online_time) = online_time {
-                        let offline_time = row.created_at;
-                        let time_span = TimeSpan::new(online_time, offline_time);
-                        if time_span.is_negative_or_zero() {
-                            // this should not happen as long as events are indexed in the table in chronological order
-                            panic!("got a non-positive duration for {}", row.display_name);
-                        }
-                        if let Ok(events) = clamp_range_to_vrcx_uptime(time_span, vrcx_start_stop_events.as_slice()) {
-                            // perfect, we got a usable event. We need to update buckets!
-                            for time_span in events.into_iter() {
-                                if time_span.is_negative_or_zero() {
-                                    // this should not happen if my clamping code actually works
-                                    panic!("got a non-positive clamped duration for {}", row.display_name);
-                                }
-                                update_bucket_counts_for_range(bucket_duration, config.bucket_duration_minutes, time_span, buckets.as_mut_slice());
+        // process the user online/offline events
+        for row in user_online_offline_events {
+            let row = row.unwrap();
+            if is_user_allowed(&row.user_id, &config.friend_ids) {
+                match row.event_type {
+                    OnlineOfflineEventType::Online => {
+                        // it is intentional that this overwrites previous Online events,
+                        // because given two Online events in a row we should drop the first one
+                        user_online_time.insert(row.user_id, row.created_at);
+                    }
+                    OnlineOfflineEventType::Offline => {
+                        let online_time = user_online_time.remove(&row.user_id);
+                        if let Some(online_time) = online_time {
+                            let offline_time = row.created_at;
+                            let time_span = TimeSpan::new(online_time, offline_time);
+                            if time_span.is_negative_or_zero() {
+                                // this should not happen as long as events are indexed in the table in chronological order
+                                panic!("got a non-positive duration for {}", row.display_name);
                             }
-                        } // else, the range was too long, so drop the event
-                    } // else, no matching online time, so drop the event
-                }
-            };
+                            if let Ok(events) = clamp_range_to_vrcx_uptime(time_span, vrcx_start_stop_events.as_slice()) {
+                                // perfect, we got a usable event. We need to update buckets!
+                                for time_span in events.into_iter() {
+                                    if time_span.is_negative_or_zero() {
+                                        // this should not happen if my clamping code actually works
+                                        panic!("got a non-positive clamped duration for {}", row.display_name);
+                                    }
+                                    update_bucket_counts_for_range(bucket_duration, config.bucket_duration_minutes, time_span, buckets.as_mut_slice());
+                                }
+                            } // else, the range was too long, so drop the event
+                        } // else, no matching online time, so drop the event
+                    }
+                };
+            }
         }
     }
 
@@ -148,10 +154,12 @@ fn main() {
 /// otherwise, return the range truncated to when VRCX was known to be running
 /// if the range cannot be truncated, returns Err
 fn clamp_range_to_vrcx_uptime(time_span: TimeSpan, vrcx_start_stop_events: &[VrcxStartStopEvent]) -> Result<Vec<TimeSpan>, ()> {
-    // compute index of the VRCX start/stop event preceding this time range
+    // Compute index of the VRCX start/stop event preceding this time range.
     let start_idx = vrcx_start_stop_events.binary_search_by_key(&time_span.start, |event| event.timestamp)
         .unwrap_or_else(|insert_idx| insert_idx.checked_sub(1).unwrap());
-    // compute compute index of the VRCX start/stop event following this time range
+
+    // Compute index of the VRCX start/stop event following this time range.
+    // In certain edge cases (VRCX is currently running?) this might be out of the slice bounds.
     let stop_idx = vrcx_start_stop_events.binary_search_by_key(&time_span.stop, |event| event.timestamp)
         .unwrap_or_else(|insert_idx| insert_idx);
 
@@ -164,7 +172,7 @@ fn clamp_range_to_vrcx_uptime(time_span: TimeSpan, vrcx_start_stop_events: &[Vrc
     // [..., vrcx_stop, event_start, ...]
     if !matches!(vrcx_start_stop_events[start_idx].event, VrcxStartStopEventType::Start) {
         // also, VRCX started after the event ended
-        return if !matches!(vrcx_start_stop_events[stop_idx].event, VrcxStartStopEventType::Stop) {
+        return if stop_idx >= vrcx_start_stop_events.len() || !matches!(vrcx_start_stop_events[stop_idx].event, VrcxStartStopEventType::Stop) {
             // yeah, I have no idea how to deal with this
             // [..., vrcx_stop, event_start, ..., event_stop, vrcx_start, ...]
 
@@ -190,7 +198,7 @@ fn clamp_range_to_vrcx_uptime(time_span: TimeSpan, vrcx_start_stop_events: &[Vrc
 
     // VRCX started after the event ended, but the start is normal
     // [..., vrcx_start, event_start, vrcx_stop, ..., event_stop, vrcx_start, ...]
-    if !matches!(vrcx_start_stop_events[stop_idx].event, VrcxStartStopEventType::Stop) {
+    if stop_idx >= vrcx_start_stop_events.len() || !matches!(vrcx_start_stop_events[stop_idx].event, VrcxStartStopEventType::Stop) {
         // we can use the front end of this event
         let event_1_stop = &vrcx_start_stop_events[start_idx + 1];
         assert!(matches!(event_1_stop.event, VrcxStartStopEventType::Stop));
