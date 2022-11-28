@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
-use chrono::{Datelike, DateTime, Duration, DurationRound, Local, Timelike, Utc, Weekday};
+use chrono::{Datelike, DateTime, Duration, DurationRound, FixedOffset, Local, Timelike, Utc, Weekday};
 use chrono::naive::NaiveTime;
 use num_traits::cast::FromPrimitive;
 use rusqlite::{Connection, DropBehavior, OpenFlags};
@@ -31,6 +31,7 @@ fn main() {
     let bucket_duration_seconds: u32 = config.bucket_duration_minutes * SECONDS_PER_MINUTE;
     let bucket_duration: Duration = Duration::minutes(i64::try_from(config.bucket_duration_minutes).unwrap());
     let vrcx_running_detection_threshold: Duration = Duration::minutes(i64::try_from(config.vrcx_running_detection_threshold_minutes).unwrap());
+    let start_time = config.start_time.map(|t| DateTime::parse_from_rfc3339(&t).unwrap().with_timezone(&Utc));
 
     // open the sqlite database
     let mut db = Connection::open_with_flags(
@@ -112,6 +113,12 @@ fn main() {
         // process the user online/offline events
         for row in user_online_offline_events {
             let row = row.unwrap();
+
+            // apply start_time filter
+            if start_time.map_or(false, |start| start > row.created_at) {
+                continue;
+            }
+
             if is_user_allowed(&row.user_id, &config.friend_ids) {
                 match row.event_type {
                     OnlineOfflineEventType::Online => {

@@ -13,4 +13,5 @@ pub struct Configuration {
     pub vrcx_running_detection_threshold_minutes: u32,
     pub bucket_duration_minutes: u32,
     pub normalize: bool,
+    pub start_time: Option<String>,
 }
