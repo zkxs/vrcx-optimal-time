@@ -5,7 +5,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
 
-use chrono::{Datelike, DateTime, Duration, DurationRound, FixedOffset, Local, Timelike, Utc, Weekday};
+use chrono::{Datelike, DateTime, Duration, DurationRound, Local, Timelike, Utc, Weekday};
 use chrono::naive::NaiveTime;
 use num_traits::cast::FromPrimitive;
 use rusqlite::{Connection, DropBehavior, OpenFlags};
@@ -357,7 +357,7 @@ fn bucket_index_to_label(bucket_duration_seconds: u32, bucket_index: usize) -> S
 /// convert a bucket index to the time of day
 fn bucket_index_to_time(bucket_duration_seconds: u32, bucket_index: usize) -> NaiveTime {
     let seconds_from_midnight = bucket_duration_seconds * u32::try_from(bucket_index).unwrap();
-    NaiveTime::from_num_seconds_from_midnight(seconds_from_midnight, 0)
+    NaiveTime::from_num_seconds_from_midnight_opt(seconds_from_midnight, 0).unwrap()
 }
 
 /// check if a given user has been filtered out by our configuration
