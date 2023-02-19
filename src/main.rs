@@ -131,20 +131,20 @@ fn main() {
                         if let Some(online_time) = online_time {
                             let offline_time = row.created_at;
                             let time_span = TimeSpan::new(online_time, offline_time);
-                            if time_span.is_negative_or_zero() {
-                                // this should not happen as long as events are indexed in the table in chronological order
-                                panic!("got a non-positive duration for {}", row.display_name);
+                            if time_span.stop < time_span.start {
+                                panic!("Got a negative ({}ms) duration for {}. This should not happen as long as events are indexed in the table in chronological order.", time_span.duration().num_milliseconds(), row.display_name);
                             }
-                            if let Ok(events) = clamp_range_to_vrcx_uptime(time_span, vrcx_start_stop_events.as_slice()) {
-                                // perfect, we got a usable event. We need to update buckets!
-                                for time_span in events.into_iter() {
-                                    if time_span.is_negative_or_zero() {
-                                        // this should not happen if my clamping code actually works
-                                        panic!("got a non-positive clamped duration for {}", row.display_name);
+                            if time_span.stop > time_span.start {
+                                if let Ok(events) = clamp_range_to_vrcx_uptime(time_span, vrcx_start_stop_events.as_slice()) {
+                                    // perfect, we got a usable event. We need to update buckets!
+                                    for time_span in events.into_iter() {
+                                        if time_span.is_negative_or_zero() {
+                                            panic!("Got a non-positive clamped duration ({}ms) for {}. This should not happen if my clamping code actually works.", time_span.duration().num_milliseconds(), row.display_name);
+                                        }
+                                        update_bucket_counts_for_range(bucket_duration, config.bucket_duration_minutes, time_span, buckets.as_mut_slice());
                                     }
-                                    update_bucket_counts_for_range(bucket_duration, config.bucket_duration_minutes, time_span, buckets.as_mut_slice());
-                                }
-                            } // else, the range was too long, so drop the event
+                                } // else, the range is too long, so drop the event
+                            } // else, the time_span doesn't have positive duration so we skip it
                         } // else, no matching online time, so drop the event
                     }
                 };
