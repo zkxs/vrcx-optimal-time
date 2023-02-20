@@ -45,7 +45,7 @@ fn main() {
     let mut vrcx_start_stop_events: Vec<VrcxStartStopEvent> = Vec::new();
 
     // build and run the all events query
-    let stripped_user_id = config.your_user_id.replace('-', "").replace('_', "");
+    let stripped_user_id = config.your_user_id.replace(['-', '_'], "");
     let all_events_statement = format!("select created_at from {stripped_user_id}_feed_avatar union select created_at from {stripped_user_id}_feed_gps union select created_at from {stripped_user_id}_feed_online_offline union select created_at from {stripped_user_id}_feed_status union select created_at from {stripped_user_id}_friend_log_history order by created_at asc;");
 
     // run a big transactional read
@@ -132,7 +132,7 @@ fn main() {
                             let offline_time = row.created_at;
                             let time_span = TimeSpan::new(online_time, offline_time);
                             if time_span.stop < time_span.start {
-                                panic!("Got a negative ({}ms) duration for {}. This should not happen as long as events are indexed in the table in chronological order.", time_span.duration().num_milliseconds(), row.display_name);
+                                panic!("Got a negative ({}ms) duration for {}. This should not happen.", time_span.duration().num_milliseconds(), row.display_name);
                             }
                             if time_span.stop > time_span.start {
                                 if let Ok(events) = clamp_range_to_vrcx_uptime(time_span, vrcx_start_stop_events.as_slice()) {
@@ -144,7 +144,7 @@ fn main() {
                                         update_bucket_counts_for_range(bucket_duration, config.bucket_duration_minutes, time_span, buckets.as_mut_slice());
                                     }
                                 } // else, the range is too long, so drop the event
-                            } // else, the time_span doesn't have positive duration so we skip it
+                            } // else, the time_span doesn't have positive duration so we skip it. Note that this also drops the Online event, because a simultaneous Online+Offline event is nonsensical.
                         } // else, no matching online time, so drop the event
                     }
                 };
