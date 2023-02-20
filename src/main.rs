@@ -103,7 +103,7 @@ fn main() {
         }
 
         // build and run the online/offline query
-        let online_offline_statement = format!("select created_at, user_id, display_name, type from {stripped_user_id}_feed_online_offline order by id");
+        let online_offline_statement = format!("select created_at, user_id, display_name, type from {stripped_user_id}_feed_online_offline order by created_at asc");
         let mut online_offline_statement = transaction.prepare(&online_offline_statement).unwrap();
         let user_online_offline_events = online_offline_statement.query_map((), |row| Row::try_from(row)).unwrap();
 
