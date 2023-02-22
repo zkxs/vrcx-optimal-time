@@ -10,8 +10,8 @@ For the best results, you'll need to have used VRCX for a reasonably long time t
 2. Place the file wherever you want.
 3. Create a file name `config.toml` next to the vrcx-optimal-time executable
 4. Fill in the config by referencing the provided [example config.toml](doc/config.toml).
-5. Run the application to get tab-delimited output in your console.
-6. Paste the output into your charting software of choice (for example, Excel or Google Sheets)
+5. Run the application to get tab-delimited output in your console. If you want it in a file, something like `vrcx-optimal-time > output.txt` should work in most shells.
+6. Paste the output into your charting software of choice (for example, Excel or Google Sheets). Here's an [example Google Sheet](https://docs.google.com/spreadsheets/d/11kGoZD9BTLpWUGHI9X7rCUGkWk6E5rVGCPmMivXf5_U/edit?usp=sharing) that you can directly paste the program output into. 
 7. Create a neat chart!
 
 ## Output
