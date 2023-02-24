@@ -14,4 +14,6 @@ pub struct Configuration {
     pub bucket_duration_minutes: u32,
     pub normalize: bool,
     pub start_time: Option<String>,
+    pub minimum_bucket_activations: Option<u32>,
+    pub no_data_returns_zero: Option<bool>,
 }

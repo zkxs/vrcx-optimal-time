@@ -32,6 +32,8 @@ fn main() {
     let bucket_duration: Duration = Duration::minutes(i64::try_from(config.bucket_duration_minutes).unwrap());
     let vrcx_running_detection_threshold: Duration = Duration::minutes(i64::try_from(config.vrcx_running_detection_threshold_minutes).unwrap());
     let start_time = config.start_time.map(|t| DateTime::parse_from_rfc3339(&t).unwrap().with_timezone(&Utc));
+    let minimum_bucket_activations = config.minimum_bucket_activations.unwrap_or(1);
+    let no_data_returns_zero = config.no_data_returns_zero.unwrap_or(false);
 
     // open the sqlite database
     let mut db = Connection::open_with_flags(
@@ -153,7 +155,7 @@ fn main() {
     }
 
     // output the results
-    print_buckets(bucket_duration_seconds, buckets_per_day, config.normalize, buckets);
+    print_buckets(bucket_duration_seconds, buckets_per_day, config.normalize, minimum_bucket_activations, no_data_returns_zero, buckets);
 }
 
 /// clamps a time range to when VRCX was running
@@ -304,12 +306,19 @@ fn register_bucket_date(bucket_duration_minutes: u32, bucket_time: DateTime<Loca
 }
 
 /// print bucket data to console
-fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, normalize: bool, buckets: Vec<Vec<BucketValue>>) {
+fn print_buckets(
+    bucket_duration_seconds: u32,
+    buckets_per_day: usize,
+    normalize: bool,
+    minimum_bucket_activations: u32,
+    no_data_returns_zero: bool,
+    buckets: Vec<Vec<BucketValue>>,
+) {
     // header
     print!("bucket");
     for day in 0..DAYS_PER_WEEK {
         let weekday = Weekday::from_usize(day).unwrap();
-        print!("\t{}", weekday);
+        print!("\t{weekday}");
     }
     println!();
 
@@ -320,8 +329,21 @@ fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, normalize
             let bucket_value = buckets_for_day.get(bucket_index).unwrap();
             let online_count = bucket_value.online_count;
 
-            if normalize {
-                let vrcx_activity_count = bucket_value.total_dates().max(1);
+            let vrcx_activity_count = bucket_value.total_dates();
+            if vrcx_activity_count == 0 && online_count != 0 {
+                panic!("We somehow have vrcx_activity_count={vrcx_activity_count} and online_count={online_count}, which is nonsensical.");
+            }
+
+            if u32::try_from(vrcx_activity_count).unwrap() < minimum_bucket_activations {
+                // not enough activity, so return no data
+                if no_data_returns_zero {
+                    print!("\t0");
+                } else {
+                    print!("\t");
+                }
+            } else if normalize {
+                // we're normalizing, so we have to do floating point math
+                // we'll just do this in a completely separate branch than the un-normalized stuff
 
                 /* This next line requires some explanation. TL;DR: it's to account for bias in when data is recorded.
                  *
@@ -338,10 +360,11 @@ fn print_buckets(bucket_duration_seconds: u32, buckets_per_day: usize, normalize
                  * The solution is to record the number of days for which a bucket is "active", and divide the friend online count by that activity count.
                  * This normalizes the data. For Sunday, 180 / 90 = 2. For Wednesday, 10 / 5 = 2.
                  */
-                let normalized_online_activity: f64 = online_count as f64 / vrcx_activity_count as f64;
-                print!("\t{}", normalized_online_activity);
+                let normalized_online_activity: f64 = f64::from(online_count) / f64::from(u32::try_from(vrcx_activity_count).unwrap());
+                print!("\t{normalized_online_activity}");
             } else {
-                print!("\t{}", online_count);
+                // we aren't normalizing, so we just return the online_count integer
+                print!("\t{online_count}");
             }
         }
         println!();

@@ -16,5 +16,11 @@ normalize = true
 # Optionally, you can provide an array of friend ids here to ONLY show those friends. Omit this line entirely to show all friends.
 #friend_ids = ["usr_80d8bbe0-2040-406c-bb4f-0cf0cf9a6c49", "usr_84b47dcc-c1bd-4457-b0ea-357ad3a2cf2c", "usr_645a17a0-4118-436a-9604-37f587bbe8d4", "usr_52eac624-cbce-45ac-a409-863f2affe520", "usr_43916fcd-491b-4746-9428-86b08fdfb629", "usr_12fd610d-369f-4a33-81da-fbb8b7b28c16", "usr_62956bf2-1ed0-487e-9215-b2ad597e206d", "usr_1e3e5f0f-7506-4319-8575-bec5f4262080", "usr_8765fbf6-b9ac-4a28-9774-d1d5152e24d0", "usr_3030d6b1-b38e-480b-a72a-f5ee2741cf39"]
 
-# Earliest time (ISO-8601) to use data from
-start_time = "2022-01-01T00:00:00-00:00"
+# Optionally, provide the earliest time (ISO-8601) to use data from. Omit this entirely to use all VRCX data.
+#start_time = "1970-01-01T00:00:00-00:00"
+
+# Optionally, provide the minimum number of times VRCX needs to be running during a given bucket to collect data for that bucket. Sometimes no data is better than bad data. By default we will use all data.
+#minimum_bucket_activations = 1
+
+# Should "0" be returned instead of "" on no data?
+no_data_returns_zero = false
