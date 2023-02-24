@@ -32,7 +32,7 @@ fn main() {
     let bucket_duration: Duration = Duration::minutes(i64::try_from(config.bucket_duration_minutes).unwrap());
     let vrcx_running_detection_threshold: Duration = Duration::minutes(i64::try_from(config.vrcx_running_detection_threshold_minutes).unwrap());
     let start_time = config.start_time.map(|t| DateTime::parse_from_rfc3339(&t).unwrap().with_timezone(&Utc));
-    let minimum_bucket_activations = config.minimum_bucket_activations.unwrap_or(1);
+    let minimum_bucket_activations = config.minimum_bucket_activations.unwrap_or(1).max(1);
     let no_data_returns_zero = config.no_data_returns_zero.unwrap_or(false);
 
     // open the sqlite database
