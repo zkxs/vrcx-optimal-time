@@ -11,7 +11,7 @@ For the best results, you'll need to have used VRCX for a reasonably long time t
 3. Create a file name `config.toml` next to the vrcx-optimal-time executable
 4. Fill in the config by referencing the provided [example config.toml](doc/config.toml).
 5. Run the application to get tab-delimited output in your console. If you want it in a file, something like `vrcx-optimal-time > output.txt` should work in most shells.
-6. Paste the output into your charting software of choice (for example, Excel or Google Sheets).
+6. Paste the output into your charting software of choice
    - [@RubenPX](https://github.com/RubenPX) has created an easy to use web-based viewer [here](https://px-byte.github.io/vrcx-optimal-time-viewer/).
    - Here's an [example Google Sheet](https://docs.google.com/spreadsheets/d/11kGoZD9BTLpWUGHI9X7rCUGkWk6E5rVGCPmMivXf5_U/edit?usp=sharing) that you can copy, then directly paste the program output into. 
 7. Create a neat chart!
@@ -21,6 +21,11 @@ For the best results, you'll need to have used VRCX for a reasonably long time t
 Here's an example chart generated from approximately 200 friends worth of data captured over 2 years. VRCX was running for ~900 hours out of that time span.
 
 ![example chart](doc/example-chart.svg)
+
+## Building from Source
+1. [Install Rust](https://www.rust-lang.org/tools/install)
+2. Clone the project
+3. `cargo build --release`
 
 ## FAQ
 
