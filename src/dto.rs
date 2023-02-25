@@ -3,7 +3,9 @@
 // vrcx-optimal-time is licensed under the MIT license (see LICENSE file for details).
 
 use std::collections::HashSet;
-use chrono::{DateTime, Duration, Local, NaiveDate, Utc};
+
+use chrono::{DateTime, Duration, Local, Utc};
+
 use crate::constants::{COLUMN_INDEX_CREATED_AT, COLUMN_INDEX_DISPLAY_NAME, COLUMN_INDEX_EVENT_TYPE, COLUMN_INDEX_USER_ID};
 
 /// value of a bucket. This represents an n-minute window on a certain day of the week. For example, 8:00 to 8:10 on a Monday.
@@ -12,7 +14,7 @@ pub struct BucketValue {
     /// total number of online friends seen for this bucket
     pub online_count: u32,
     /// records individual dates VRCX has been active on for this bucket
-    pub vrcx_activity_dates: HashSet<NaiveDate>,
+    pub vrcx_activity_dates: HashSet<DateTime<Local>>,
 }
 
 impl BucketValue {
@@ -23,7 +25,7 @@ impl BucketValue {
 
     /// remember that VRCX was running during the provided date for this bucket
     pub fn register_date(&mut self, datetime: DateTime<Local>) {
-        self.vrcx_activity_dates.insert(datetime.date_naive());
+        self.vrcx_activity_dates.insert(datetime);
     }
 
     /// number of distinct dates VRCX was running during for this bucket

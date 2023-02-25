@@ -3,6 +3,7 @@
 // vrcx-optimal-time is licensed under the MIT license (see LICENSE file for details).
 
 use std::collections::HashSet;
+
 use serde_derive::Deserialize;
 
 #[derive(Deserialize)]
@@ -16,4 +17,6 @@ pub struct Configuration {
     pub start_time: Option<String>,
     pub minimum_bucket_activations: Option<u32>,
     pub no_data_returns_zero: Option<bool>,
+    pub print_statistics: Option<bool>,
+    pub print_runtime: Option<bool>,
 }

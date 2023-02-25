@@ -4,6 +4,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fs;
+use std::time::Instant;
 
 use chrono::{Datelike, DateTime, Duration, DurationRound, Local, Timelike, Utc, Weekday};
 use chrono::naive::NaiveTime;
@@ -12,7 +13,7 @@ use rusqlite::{Connection, DropBehavior, OpenFlags};
 
 use config::Configuration;
 
-use crate::constants::{COLUMN_INDEX_CREATED_AT, DAYS_PER_WEEK, MINUTES_PER_DAY, SECONDS_PER_MINUTE};
+use crate::constants::{COLUMN_INDEX_CREATED_AT, DAYS_PER_WEEK, MILLISECONDS_PER_HOUR, MINUTES_PER_DAY, SECONDS_PER_MINUTE};
 use crate::dto::{BucketValue, OnlineOfflineEventType, Row, TimeSpan, VrcxStartStopEvent, VrcxStartStopEventType};
 
 mod config;
@@ -20,6 +21,9 @@ mod dto;
 mod constants;
 
 fn main() {
+    // record application start time
+    let application_start_time = Instant::now();
+
     // load the config
     let config_string = fs::read_to_string("config.toml").unwrap();
     let config: Configuration = toml::from_str(&config_string).unwrap();
@@ -34,6 +38,8 @@ fn main() {
     let start_time = config.start_time.map(|t| DateTime::parse_from_rfc3339(&t).unwrap().with_timezone(&Utc));
     let minimum_bucket_activations = config.minimum_bucket_activations.unwrap_or(1).max(1);
     let no_data_returns_zero = config.no_data_returns_zero.unwrap_or(false);
+    let should_print_statistics = config.print_statistics.unwrap_or(false);
+    let should_print_runtime = config.print_runtime.unwrap_or(false);
 
     // open the sqlite database
     let mut db = Connection::open_with_flags(
@@ -45,6 +51,10 @@ fn main() {
     // set up data structures we'll need for the VRCX running analysis
     let mut buckets = build_daily_buckets(buckets_per_day);
     let mut vrcx_start_stop_events: Vec<VrcxStartStopEvent> = Vec::new();
+    let first_event_timestamp: Option<DateTime<Utc>>;
+    let last_event_timestamp: Option<DateTime<Utc>>;
+    let all_event_count: usize;
+    let mut online_offline_event_count: usize = 0;
 
     // build and run the all events query
     let stripped_user_id = config.your_user_id.replace(['-', '_'], "");
@@ -59,6 +69,10 @@ fn main() {
         let all_event_timestamps: Vec<DateTime<Utc>> = all_event_timestamps
             .map(|event| event.unwrap())
             .collect();
+
+        all_event_count = all_event_timestamps.len();
+        first_event_timestamp = all_event_timestamps.first().map(|ts| ts.to_owned());
+        last_event_timestamp = all_event_timestamps.last().map(|ts| ts.to_owned());
 
         // process all event timestamps
         let mut vrcx_running: bool = false;
@@ -115,6 +129,7 @@ fn main() {
         // process the user online/offline events
         for row in user_online_offline_events {
             let row = row.unwrap();
+            online_offline_event_count += 1;
 
             // apply start_time filter
             if start_time.map_or(false, |start| start > row.created_at) {
@@ -154,8 +169,16 @@ fn main() {
         }
     }
 
+    if should_print_statistics {
+        print_statistics(bucket_duration_seconds, start_time, first_event_timestamp, last_event_timestamp, all_event_count, online_offline_event_count, &buckets);
+    }
+
     // output the results
     print_buckets(bucket_duration_seconds, buckets_per_day, config.normalize, minimum_bucket_activations, no_data_returns_zero, buckets);
+
+    if should_print_runtime {
+        eprintln!("Finished in {:.3}s.", application_start_time.elapsed().as_millis() as f64 / 1000.0);
+    }
 }
 
 /// clamps a time range to when VRCX was running
@@ -305,6 +328,58 @@ fn register_bucket_date(bucket_duration_minutes: u32, bucket_time: DateTime<Loca
     buckets[day_index][bucket_index].register_date(bucket_time);
 }
 
+fn print_statistics(
+    bucket_duration_seconds: u32,
+    start_time: Option<DateTime<Utc>>,
+    first_event_timestamp: Option<DateTime<Utc>>,
+    last_event_timestamp: Option<DateTime<Utc>>,
+    all_event_count: usize,
+    online_offline_event_count: usize,
+    buckets: &[Vec<BucketValue>],
+) {
+    let current_time = Utc::now();
+
+    eprintln!("Processed {all_event_count} timestamps and {online_offline_event_count} online/offline events.");
+
+    if let Some(first_event_timestamp) = first_event_timestamp {
+        if let Some(last_event_timestamp) = last_event_timestamp {
+            let vrcx_duration: Duration = current_time.signed_duration_since(first_event_timestamp);
+            let vrcx_hours: f64 = f64::from_i64(vrcx_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
+
+            let vrcx_offline_duration = current_time.signed_duration_since(last_event_timestamp);
+            let vrcx_offline_hours: f64 = f64::from_i64(vrcx_offline_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
+
+            let activations: usize = buckets.iter().flatten()
+                .map(|bucket_value| bucket_value.total_dates())
+                .sum();
+            let active_seconds: i64 = i64::try_from(activations).unwrap() * i64::from(bucket_duration_seconds);
+            let active_duration: Duration = Duration::seconds(active_seconds);
+            let active_hours: f64 = f64::from_i64(active_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
+
+            let active_percent: f64 = 100.0 * active_hours / vrcx_hours;
+
+            eprintln!("VRCX range: {vrcx_hours:.2} hours. VRCX actually active for {active_hours:.2} hours. That's {active_percent:.1}% uptime. Last VRCX data is {vrcx_offline_hours:.2} hours old.");
+        }
+    }
+
+    if let Some(start_time) = start_time {
+        let desired_duration = current_time.signed_duration_since(start_time);
+        let desired_hours: f64 = f64::from_i64(desired_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
+
+        let activations: usize = buckets.iter().flatten()
+            .flat_map(|bucket_value| bucket_value.vrcx_activity_dates.iter())
+            .filter(|time| time >= &&start_time)
+            .count();
+        let active_seconds: i64 = i64::try_from(activations).unwrap() * i64::from(bucket_duration_seconds);
+        let active_duration: Duration = Duration::seconds(active_seconds);
+        let active_hours: f64 = f64::from_i64(active_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
+
+        let active_percent: f64 = 100.0 * active_hours / desired_hours;
+
+        eprintln!("Desired range: {desired_hours:.2} hours. VRCX actually active for {active_hours:.2} hours. That's {active_percent:.1}% uptime.");
+    }
+}
+
 /// print bucket data to console
 fn print_buckets(
     bucket_duration_seconds: u32,
@@ -360,7 +435,7 @@ fn print_buckets(
                  * The solution is to record the number of days for which a bucket is "active", and divide the friend online count by that activity count.
                  * This normalizes the data. For Sunday, 180 / 90 = 2. For Wednesday, 10 / 5 = 2.
                  */
-                let normalized_online_activity: f64 = f64::from(online_count) / f64::from(u32::try_from(vrcx_activity_count).unwrap());
+                let normalized_online_activity: f64 = f64::from(online_count) / f64::from_usize(vrcx_activity_count).unwrap();
                 print!("\t{normalized_online_activity}");
             } else {
                 // we aren't normalizing, so we just return the online_count integer

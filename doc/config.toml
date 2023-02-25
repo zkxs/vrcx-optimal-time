@@ -19,8 +19,14 @@ normalize = true
 # Optionally, provide the earliest time (ISO-8601) to use data from. Omit this entirely to use all VRCX data.
 #start_time = "1970-01-01T00:00:00-00:00"
 
-# Optionally, provide the minimum number of times VRCX needs to be running during a given bucket to collect data for that bucket. Sometimes no data is better than bad data. By default we will use all data.
-#minimum_bucket_activations = 1
+# Optionally, provide the minimum number of times VRCX needs to be running during a given bucket to collect data for that bucket. Sometimes no data is better than bad data. By default we will use all data (same as passing a 1).
+minimum_bucket_activations = 1
 
 # Should "0" be returned instead of "" on no data?
 no_data_returns_zero = false
+
+# Should extra statistics be printed to stderr?
+print_statistics = false
+
+# Should application runtime be printed to stderr?
+print_runtime = false

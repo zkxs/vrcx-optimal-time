@@ -8,6 +8,7 @@ pub const HOURS_PER_DAY: u32 = 24;
 pub const MINUTES_PER_HOUR: u32 = 60;
 pub const SECONDS_PER_MINUTE: u32 = 60;
 pub const MINUTES_PER_DAY: u32 = HOURS_PER_DAY * MINUTES_PER_HOUR;
+pub const MILLISECONDS_PER_HOUR: u32 = 60 * 60 * 1000;
 
 // indices of the columns we get back in our sqlite query result set
 pub const COLUMN_INDEX_CREATED_AT: usize = 0;
