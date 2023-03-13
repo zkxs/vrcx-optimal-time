@@ -12,7 +12,7 @@ documentation = "https://github.com/zkxs/vrcx-optimal-time"
 
 [dependencies]
 rusqlite = { version = "~0.28.0", features = ["bundled"] }
-toml = "~0.7.2"
+toml = "~0.7.3"
 serde = { version = "^1.0.147", features = ["derive"] }
 serde_derive = "^1.0.147"
 chrono = { version = "~0.4.23", default-features = false, features = ["clock", "std"] }
