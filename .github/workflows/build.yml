@@ -13,19 +13,25 @@ jobs:
           - runs-on: windows-latest
             triple: x86_64-pc-windows-msvc
             build-name: Windows
-            artifact-name: windows-x64
+            artifact-name: windows
             suffix: .exe
             path-separator: '\'
           - runs-on: ubuntu-latest
             triple: x86_64-unknown-linux-gnu
             build-name: Linux
-            artifact-name: linux-x64
+            artifact-name: linux
             suffix: ''
             path-separator: '/'
           - runs-on: macos-latest
             triple: x86_64-apple-darwin
-            build-name: macOS
-            artifact-name: mac-x64
+            build-name: macOS x86
+            artifact-name: mac-x86
+            suffix: ''
+            path-separator: '/'
+          - runs-on: macos-latest
+            triple: aarch64-apple-darwin
+            build-name: macOS ARM
+            artifact-name: mac-arm
             suffix: ''
             path-separator: '/'
       fail-fast: false
