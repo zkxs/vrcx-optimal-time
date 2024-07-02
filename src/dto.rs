@@ -1,4 +1,4 @@
-// Copyright 2022 Michael Ripley
+// Copyright 2022-2024 Michael Ripley
 // This file is part of vrcx-optimal-time.
 // vrcx-optimal-time is licensed under the MIT license (see LICENSE file for details).
 
@@ -56,7 +56,7 @@ impl TryFrom<&rusqlite::Row<'_>> for Row {
         let event_type: String = row.get(COLUMN_INDEX_EVENT_TYPE)?;
         let event_type: OnlineOfflineEventType = event_type.as_str().try_into()?;
 
-        Ok(Row {
+        Ok(Self {
             created_at,
             user_id,
             display_name,
@@ -76,8 +76,8 @@ impl TryFrom<&str> for OnlineOfflineEventType {
 
     fn try_from(value: &str) -> Result<Self, Self::Error> {
         match value {
-            "Online" => Ok(OnlineOfflineEventType::Online),
-            "Offline" => Ok(OnlineOfflineEventType::Offline),
+            "Online" => Ok(Self::Online),
+            "Offline" => Ok(Self::Offline),
             _ => Err(rusqlite::Error::InvalidColumnType(COLUMN_INDEX_EVENT_TYPE, value.to_string(), rusqlite::types::Type::Text))
         }
     }
@@ -89,15 +89,15 @@ pub struct VrcxStartStopEvent {
 }
 
 impl VrcxStartStopEvent {
-    pub fn start(timestamp: DateTime<Utc>) -> VrcxStartStopEvent {
-        VrcxStartStopEvent {
+    pub const fn start(timestamp: DateTime<Utc>) -> Self {
+        Self {
             timestamp,
             event: VrcxStartStopEventType::Start,
         }
     }
 
-    pub fn stop(timestamp: DateTime<Utc>) -> VrcxStartStopEvent {
-        VrcxStartStopEvent {
+    pub const fn stop(timestamp: DateTime<Utc>) -> Self {
+        Self {
             timestamp,
             event: VrcxStartStopEventType::Stop,
         }
@@ -116,8 +116,8 @@ pub struct TimeSpan {
 }
 
 impl TimeSpan {
-    pub fn new(start: DateTime<Utc>, stop: DateTime<Utc>) -> TimeSpan {
-        TimeSpan {
+    pub const fn new(start: DateTime<Utc>, stop: DateTime<Utc>) -> Self {
+        Self {
             start,
             stop,
         }

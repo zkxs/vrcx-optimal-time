@@ -1,4 +1,4 @@
-// Copyright 2022 Michael Ripley
+// Copyright 2022-2024 Michael Ripley
 // This file is part of vrcx-optimal-time.
 // vrcx-optimal-time is licensed under the MIT license (see LICENSE file for details).
 
@@ -33,8 +33,8 @@ fn main() {
     assert_eq!(buckets_per_day_remainder, 0, "bucket_duration_minutes does not perfectly divide a day");
     let buckets_per_day: usize = usize::try_from(buckets_per_day).unwrap();
     let bucket_duration_seconds: u32 = config.bucket_duration_minutes * SECONDS_PER_MINUTE;
-    let bucket_duration: Duration = Duration::minutes(i64::try_from(config.bucket_duration_minutes).unwrap());
-    let vrcx_running_detection_threshold: Duration = Duration::minutes(i64::try_from(config.vrcx_running_detection_threshold_minutes).unwrap());
+    let bucket_duration: Duration = Duration::minutes(i64::from(config.bucket_duration_minutes));
+    let vrcx_running_detection_threshold: Duration = Duration::minutes(i64::from(config.vrcx_running_detection_threshold_minutes));
     let start_time = config.start_time.map(|t| DateTime::parse_from_rfc3339(&t).unwrap().with_timezone(&Utc));
     let minimum_bucket_activations = config.minimum_bucket_activations.unwrap_or(1).max(1);
     let no_data_returns_zero = config.no_data_returns_zero.unwrap_or(false);
@@ -89,7 +89,7 @@ fn main() {
                             // vrcx just started running
 
                             // the previous event should have been a stop event (or empty)
-                            debug_assert!(matches!(vrcx_start_stop_events.last(), None) || matches!(vrcx_start_stop_events.last(), Some(x) if matches!(x.event, VrcxStartStopEventType::Stop)));
+                            debug_assert!(vrcx_start_stop_events.last().is_none() || matches!(vrcx_start_stop_events.last(), Some(VrcxStartStopEvent{ event: VrcxStartStopEventType::Stop, .. })));
 
                             vrcx_running = true;
                             vrcx_start_stop_events.push(VrcxStartStopEvent::start(event_timestamp_1));
@@ -103,7 +103,7 @@ fn main() {
                         // also, VRCX was running in the previous range, therefore we need to push a stop event
 
                         // the previous event should have been a start event
-                        debug_assert!(matches!(vrcx_start_stop_events.last(), Some(x) if matches!(x.event, VrcxStartStopEventType::Start)));
+                        debug_assert!(matches!(vrcx_start_stop_events.last(), Some(VrcxStartStopEvent{ event: VrcxStartStopEventType::Start, .. })));
 
                         vrcx_running = false;
                         vrcx_start_stop_events.push(VrcxStartStopEvent::stop(event_timestamp_1));
@@ -460,12 +460,8 @@ fn bucket_index_to_time(bucket_duration_seconds: u32, bucket_index: usize) -> Na
 
 /// check if a given user has been filtered out by our configuration
 fn is_user_allowed(user_id: &str, friend_ids: &Option<HashSet<String>>) -> bool {
-    if let Some(friend_ids) = friend_ids {
-        friend_ids.contains(user_id)
-    } else {
-        // if friend ids is unset, then allow every user id
-        true
-    }
+    // if friend ids is unset, then allow every user id
+    friend_ids.as_ref().map_or(true, |friend_ids| friend_ids.contains(user_id))
 }
 
 /// parse a timestamp from a sqlite result
