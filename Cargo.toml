@@ -6,9 +6,7 @@ authors = ["Michael Ripley <zkxs00@gmail.com>"]
 description = "Analyzes VRCX logs for optimal VRC playtimes"
 license = "MIT"
 readme = "README.md"
-homepage = "https://github.com/zkxs/vrcx-optimal-time"
 repository = "https://github.com/zkxs/vrcx-optimal-time"
-documentation = "https://github.com/zkxs/vrcx-optimal-time"
 
 [dependencies]
 rusqlite = { version = "0.29", features = ["bundled"] }
