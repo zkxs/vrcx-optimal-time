@@ -59,7 +59,7 @@ jobs:
       - name: Build
         run: cargo build --release --target ${{ matrix.target.triple }}
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: vrcx-optimal-time-${{ matrix.target.triple }}
           path: ./target/${{ matrix.target.triple }}/release/vrcx-optimal-time${{ matrix.target.suffix }}
