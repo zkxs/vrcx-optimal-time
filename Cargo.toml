@@ -9,7 +9,7 @@ readme = "README.md"
 repository = "https://github.com/zkxs/vrcx-optimal-time"
 
 [dependencies]
-rusqlite = { version = "0.31", features = ["bundled"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
 toml = "0.8"
 serde = { version = "1", features = ["derive"] }
 serde_derive = "1"
