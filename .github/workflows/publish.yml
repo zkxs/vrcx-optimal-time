@@ -1,0 +1,32 @@
+# Copyright 2025 Michael Ripley
+# This file is part of vrcx-optimal-time.
+# vrcx-optimal-time is licensed under the MIT license (see LICENSE file for details).
+
+name: Publish
+on:
+  workflow_dispatch:
+    secrets:
+      CARGO_REGISTRY_TOKEN:
+        required: true
+jobs:
+  publish:
+    runs-on: windows-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v4
+      - name: Setup workflow cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+      - name: Update Rust Toolchain
+        run: rustup update
+      - name: Publish
+        run: cargo publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
