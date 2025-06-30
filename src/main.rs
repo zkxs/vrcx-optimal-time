@@ -6,19 +6,21 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::time::Instant;
 
-use chrono::{Datelike, DateTime, Duration, DurationRound, Local, Timelike, Utc, Weekday};
 use chrono::naive::NaiveTime;
+use chrono::{DateTime, Datelike, Duration, DurationRound, Local, Timelike, Utc, Weekday};
 use num_traits::cast::FromPrimitive;
 use rusqlite::{Connection, DropBehavior, OpenFlags};
 
 use config::Configuration;
 
-use crate::constants::{COLUMN_INDEX_CREATED_AT, DAYS_PER_WEEK, MILLISECONDS_PER_HOUR, MINUTES_PER_DAY, SECONDS_PER_MINUTE};
+use crate::constants::{
+    COLUMN_INDEX_CREATED_AT, DAYS_PER_WEEK, MILLISECONDS_PER_HOUR, MINUTES_PER_DAY, SECONDS_PER_MINUTE,
+};
 use crate::dto::{BucketValue, OnlineOfflineEventType, Row, TimeSpan, VrcxStartStopEvent, VrcxStartStopEventType};
 
 mod config;
-mod dto;
 mod constants;
+mod dto;
 
 fn main() {
     // record application start time
@@ -29,13 +31,22 @@ fn main() {
     let config: Configuration = toml::from_str(&config_string).unwrap();
 
     // derive constants from config
-    let (buckets_per_day, buckets_per_day_remainder) = (MINUTES_PER_DAY / config.bucket_duration_minutes, MINUTES_PER_DAY % config.bucket_duration_minutes);
-    assert_eq!(buckets_per_day_remainder, 0, "bucket_duration_minutes does not perfectly divide a day");
+    let (buckets_per_day, buckets_per_day_remainder) = (
+        MINUTES_PER_DAY / config.bucket_duration_minutes,
+        MINUTES_PER_DAY % config.bucket_duration_minutes,
+    );
+    assert_eq!(
+        buckets_per_day_remainder, 0,
+        "bucket_duration_minutes does not perfectly divide a day"
+    );
     let buckets_per_day: usize = usize::try_from(buckets_per_day).unwrap();
     let bucket_duration_seconds: u32 = config.bucket_duration_minutes * SECONDS_PER_MINUTE;
     let bucket_duration: Duration = Duration::minutes(i64::from(config.bucket_duration_minutes));
-    let vrcx_running_detection_threshold: Duration = Duration::minutes(i64::from(config.vrcx_running_detection_threshold_minutes));
-    let start_time = config.start_time.map(|t| DateTime::parse_from_rfc3339(&t).unwrap().with_timezone(&Utc));
+    let vrcx_running_detection_threshold: Duration =
+        Duration::minutes(i64::from(config.vrcx_running_detection_threshold_minutes));
+    let start_time = config
+        .start_time
+        .map(|t| DateTime::parse_from_rfc3339(&t).unwrap().with_timezone(&Utc));
     let minimum_bucket_activations = config.minimum_bucket_activations.unwrap_or(1).max(1);
     let no_data_returns_zero = config.no_data_returns_zero.unwrap_or(false);
     let should_print_statistics = config.print_statistics.unwrap_or(false);
@@ -44,9 +55,9 @@ fn main() {
     // open the sqlite database
     let mut db = Connection::open_with_flags(
         config.vrcx_db_path,
-        OpenFlags::SQLITE_OPEN_READ_ONLY
-            | OpenFlags::SQLITE_OPEN_URI
-            | OpenFlags::SQLITE_OPEN_NO_MUTEX).unwrap();
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_URI | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .unwrap();
 
     // set up data structures we'll need for the VRCX running analysis
     let mut buckets = build_daily_buckets(buckets_per_day);
@@ -58,7 +69,9 @@ fn main() {
 
     // build and run the all events query
     let stripped_user_id = config.your_user_id.replace(['-', '_'], "");
-    let all_events_statement = format!("select created_at from {stripped_user_id}_feed_avatar union select created_at from {stripped_user_id}_feed_gps union select created_at from {stripped_user_id}_feed_online_offline union select created_at from {stripped_user_id}_feed_status union select created_at from {stripped_user_id}_friend_log_history order by created_at asc;");
+    let all_events_statement = format!(
+        "select created_at from {stripped_user_id}_feed_avatar union select created_at from {stripped_user_id}_feed_gps union select created_at from {stripped_user_id}_feed_online_offline union select created_at from {stripped_user_id}_feed_status union select created_at from {stripped_user_id}_friend_log_history order by created_at asc;"
+    );
 
     // run a big transactional read
     {
@@ -66,9 +79,7 @@ fn main() {
         transaction.set_drop_behavior(DropBehavior::Commit);
         let mut all_events_statement = transaction.prepare(&all_events_statement).unwrap();
         let all_event_timestamps = all_events_statement.query_map((), parse_created_at).unwrap();
-        let all_event_timestamps: Vec<DateTime<Utc>> = all_event_timestamps
-            .map(|event| event.unwrap())
-            .collect();
+        let all_event_timestamps: Vec<DateTime<Utc>> = all_event_timestamps.map(|event| event.unwrap()).collect();
 
         all_event_count = all_event_timestamps.len();
         first_event_timestamp = all_event_timestamps.first().map(|ts| ts.to_owned());
@@ -89,7 +100,16 @@ fn main() {
                             // vrcx just started running
 
                             // the previous event should have been a stop event (or empty)
-                            debug_assert!(vrcx_start_stop_events.last().is_none() || matches!(vrcx_start_stop_events.last(), Some(VrcxStartStopEvent{ event: VrcxStartStopEventType::Stop, .. })));
+                            debug_assert!(
+                                vrcx_start_stop_events.last().is_none()
+                                    || matches!(
+                                        vrcx_start_stop_events.last(),
+                                        Some(VrcxStartStopEvent {
+                                            event: VrcxStartStopEventType::Stop,
+                                            ..
+                                        })
+                                    )
+                            );
 
                             vrcx_running = true;
                             vrcx_start_stop_events.push(VrcxStartStopEvent::start(event_timestamp_1));
@@ -97,31 +117,49 @@ fn main() {
 
                         // use any VRCX events available to reason that VRCX is running during a given time range
                         let time_span = TimeSpan::new(event_timestamp_1, event_timestamp_2);
-                        register_bucket_dates_for_range(bucket_duration, config.bucket_duration_minutes, time_span, buckets.as_mut_slice());
+                        register_bucket_dates_for_range(
+                            bucket_duration,
+                            config.bucket_duration_minutes,
+                            time_span,
+                            buckets.as_mut_slice(),
+                        );
                     } else if vrcx_running {
                         // duration was outside threshold, so assume VRCX is *not* running for this range (which may be quite long)
                         // also, VRCX was running in the previous range, therefore we need to push a stop event
 
                         // the previous event should have been a start event
-                        debug_assert!(matches!(vrcx_start_stop_events.last(), Some(VrcxStartStopEvent{ event: VrcxStartStopEventType::Start, .. })));
+                        debug_assert!(matches!(
+                            vrcx_start_stop_events.last(),
+                            Some(VrcxStartStopEvent {
+                                event: VrcxStartStopEventType::Start,
+                                ..
+                            })
+                        ));
 
                         vrcx_running = false;
                         vrcx_start_stop_events.push(VrcxStartStopEvent::stop(event_timestamp_1));
                     }
                 }
-                _ => unreachable!()
+                _ => unreachable!(),
             }
         }
 
         // push the final stop event, if needed
-        if !matches!(vrcx_start_stop_events.last().unwrap().event, VrcxStartStopEventType::Stop) {
+        if !matches!(
+            vrcx_start_stop_events.last().unwrap().event,
+            VrcxStartStopEventType::Stop
+        ) {
             vrcx_start_stop_events.push(VrcxStartStopEvent::stop(*all_event_timestamps.last().unwrap()));
         }
 
         // build and run the online/offline query
-        let online_offline_statement = format!("select created_at, user_id, display_name, type from {stripped_user_id}_feed_online_offline order by created_at asc");
+        let online_offline_statement = format!(
+            "select created_at, user_id, display_name, type from {stripped_user_id}_feed_online_offline order by created_at asc"
+        );
         let mut online_offline_statement = transaction.prepare(&online_offline_statement).unwrap();
-        let user_online_offline_events = online_offline_statement.query_map((), |row| Row::try_from(row)).unwrap();
+        let user_online_offline_events = online_offline_statement
+            .query_map((), |row| Row::try_from(row))
+            .unwrap();
 
         // set up data structures we'll need for the online/offline analysis
         let mut user_online_time: HashMap<String, DateTime<Utc>> = HashMap::new();
@@ -149,16 +187,31 @@ fn main() {
                             let offline_time = row.created_at;
                             let time_span = TimeSpan::new(online_time, offline_time);
                             if time_span.stop < time_span.start {
-                                panic!("Got a negative ({}ms) duration for {}. This should not happen.", time_span.duration().num_milliseconds(), row.display_name);
+                                panic!(
+                                    "Got a negative ({}ms) duration for {}. This should not happen.",
+                                    time_span.duration().num_milliseconds(),
+                                    row.display_name
+                                );
                             }
                             if time_span.stop > time_span.start {
-                                if let Ok(events) = clamp_range_to_vrcx_uptime(time_span, vrcx_start_stop_events.as_slice()) {
+                                if let Ok(events) =
+                                    clamp_range_to_vrcx_uptime(time_span, vrcx_start_stop_events.as_slice())
+                                {
                                     // perfect, we got a usable event. We need to update buckets!
                                     for time_span in events.into_iter() {
                                         if time_span.is_negative_or_zero() {
-                                            panic!("Got a non-positive clamped duration ({}ms) for {}. This should not happen if my clamping code actually works.", time_span.duration().num_milliseconds(), row.display_name);
+                                            panic!(
+                                                "Got a non-positive clamped duration ({}ms) for {}. This should not happen if my clamping code actually works.",
+                                                time_span.duration().num_milliseconds(),
+                                                row.display_name
+                                            );
                                         }
-                                        update_bucket_counts_for_range(bucket_duration, config.bucket_duration_minutes, time_span, buckets.as_mut_slice());
+                                        update_bucket_counts_for_range(
+                                            bucket_duration,
+                                            config.bucket_duration_minutes,
+                                            time_span,
+                                            buckets.as_mut_slice(),
+                                        );
                                     }
                                 } // else, the range is too long, so drop the event
                             } // else, the time_span doesn't have positive duration so we skip it. Note that this also drops the Online event, because a simultaneous Online+Offline event is nonsensical.
@@ -170,14 +223,32 @@ fn main() {
     }
 
     if should_print_statistics {
-        print_statistics(bucket_duration_seconds, start_time, first_event_timestamp, last_event_timestamp, all_event_count, online_offline_event_count, &buckets);
+        print_statistics(
+            bucket_duration_seconds,
+            start_time,
+            first_event_timestamp,
+            last_event_timestamp,
+            all_event_count,
+            online_offline_event_count,
+            &buckets,
+        );
     }
 
     // output the results
-    print_buckets(bucket_duration_seconds, buckets_per_day, config.normalize, minimum_bucket_activations, no_data_returns_zero, buckets);
+    print_buckets(
+        bucket_duration_seconds,
+        buckets_per_day,
+        config.normalize,
+        minimum_bucket_activations,
+        no_data_returns_zero,
+        buckets,
+    );
 
     if should_print_runtime {
-        eprintln!("Finished in {:.3}s.", application_start_time.elapsed().as_millis() as f64 / 1000.0);
+        eprintln!(
+            "Finished in {:.3}s.",
+            application_start_time.elapsed().as_millis() as f64 / 1000.0
+        );
     }
 }
 
@@ -185,14 +256,19 @@ fn main() {
 /// if vrcx was running for the entire range, returns the input range
 /// otherwise, return the range truncated to when VRCX was known to be running
 /// if the range cannot be truncated, returns Err
-fn clamp_range_to_vrcx_uptime(time_span: TimeSpan, vrcx_start_stop_events: &[VrcxStartStopEvent]) -> Result<Vec<TimeSpan>, ()> {
+fn clamp_range_to_vrcx_uptime(
+    time_span: TimeSpan,
+    vrcx_start_stop_events: &[VrcxStartStopEvent],
+) -> Result<Vec<TimeSpan>, ()> {
     // Compute index of the VRCX start/stop event preceding this time range.
-    let start_idx = vrcx_start_stop_events.binary_search_by_key(&time_span.start, |event| event.timestamp)
+    let start_idx = vrcx_start_stop_events
+        .binary_search_by_key(&time_span.start, |event| event.timestamp)
         .unwrap_or_else(|insert_idx| insert_idx.checked_sub(1).unwrap());
 
     // Compute index of the VRCX start/stop event following this time range.
     // In certain edge cases (VRCX is currently running?) this might be out of the slice bounds.
-    let stop_idx = vrcx_start_stop_events.binary_search_by_key(&time_span.stop, |event| event.timestamp)
+    let stop_idx = vrcx_start_stop_events
+        .binary_search_by_key(&time_span.stop, |event| event.timestamp)
         .unwrap_or_else(|insert_idx| insert_idx);
 
     // now, if VRCX was running the entire time, then all of following should be true
@@ -204,7 +280,9 @@ fn clamp_range_to_vrcx_uptime(time_span: TimeSpan, vrcx_start_stop_events: &[Vrc
     // [..., vrcx_stop, event_start, ...]
     if !matches!(vrcx_start_stop_events[start_idx].event, VrcxStartStopEventType::Start) {
         // also, VRCX started after the event ended
-        return if stop_idx >= vrcx_start_stop_events.len() || !matches!(vrcx_start_stop_events[stop_idx].event, VrcxStartStopEventType::Stop) {
+        return if stop_idx >= vrcx_start_stop_events.len()
+            || !matches!(vrcx_start_stop_events[stop_idx].event, VrcxStartStopEventType::Stop)
+        {
             // yeah, I have no idea how to deal with this
             // [..., vrcx_stop, event_start, ..., event_stop, vrcx_start, ...]
 
@@ -230,7 +308,9 @@ fn clamp_range_to_vrcx_uptime(time_span: TimeSpan, vrcx_start_stop_events: &[Vrc
 
     // VRCX started after the event ended, but the start is normal
     // [..., vrcx_start, event_start, vrcx_stop, ..., event_stop, vrcx_start, ...]
-    if stop_idx >= vrcx_start_stop_events.len() || !matches!(vrcx_start_stop_events[stop_idx].event, VrcxStartStopEventType::Stop) {
+    if stop_idx >= vrcx_start_stop_events.len()
+        || !matches!(vrcx_start_stop_events[stop_idx].event, VrcxStartStopEventType::Stop)
+    {
         // we can use the front end of this event
         let event_1_stop = &vrcx_start_stop_events[start_idx + 1];
         assert!(matches!(event_1_stop.event, VrcxStartStopEventType::Stop));
@@ -262,7 +342,12 @@ fn build_daily_buckets(buckets_per_day: usize) -> Vec<Vec<BucketValue>> {
 }
 
 /// update bucket counts that a provided range encompasses
-fn update_bucket_counts_for_range(bucket_duration: Duration, bucket_duration_minutes: u32, time_span: TimeSpan, buckets: &mut [Vec<BucketValue>]) {
+fn update_bucket_counts_for_range(
+    bucket_duration: Duration,
+    bucket_duration_minutes: u32,
+    time_span: TimeSpan,
+    buckets: &mut [Vec<BucketValue>],
+) {
     let end_time = time_span.stop.with_timezone(&Local);
     let mut start_time = time_span.start.with_timezone(&Local);
     start_time = start_time.duration_trunc(bucket_duration).unwrap();
@@ -285,7 +370,12 @@ fn update_bucket_counts_for_range(bucket_duration: Duration, bucket_duration_min
 }
 
 /// register this range's dates as active for the relevant buckets
-fn register_bucket_dates_for_range(bucket_duration: Duration, bucket_duration_minutes: u32, time_span: TimeSpan, buckets: &mut [Vec<BucketValue>]) {
+fn register_bucket_dates_for_range(
+    bucket_duration: Duration,
+    bucket_duration_minutes: u32,
+    time_span: TimeSpan,
+    buckets: &mut [Vec<BucketValue>],
+) {
     let end_time = time_span.stop.with_timezone(&Local);
     let start_time = time_span.start.with_timezone(&Local);
     let first_bucket_start_time = start_time.duration_trunc(bucket_duration).unwrap();
@@ -296,7 +386,11 @@ fn register_bucket_dates_for_range(bucket_duration: Duration, bucket_duration_mi
         let second_bucket_start_time = first_bucket_start_time + bucket_duration;
 
         // handle the first, partial bucket
-        let first_bucket_duration = TimeSpan::new(first_bucket_start_time.with_timezone(&Utc), second_bucket_start_time.with_timezone(&Utc)).duration();
+        let first_bucket_duration = TimeSpan::new(
+            first_bucket_start_time.with_timezone(&Utc),
+            second_bucket_start_time.with_timezone(&Utc),
+        )
+        .duration();
         if first_bucket_duration > bucket_duration / 2 {
             register_bucket_date(bucket_duration_minutes, second_bucket_start_time, buckets);
         }
@@ -344,39 +438,52 @@ fn print_statistics(
     if let Some(first_event_timestamp) = first_event_timestamp {
         if let Some(last_event_timestamp) = last_event_timestamp {
             let vrcx_duration: Duration = current_time.signed_duration_since(first_event_timestamp);
-            let vrcx_hours: f64 = f64::from_i64(vrcx_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
+            let vrcx_hours: f64 =
+                f64::from_i64(vrcx_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
 
             let vrcx_offline_duration = current_time.signed_duration_since(last_event_timestamp);
-            let vrcx_offline_hours: f64 = f64::from_i64(vrcx_offline_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
+            let vrcx_offline_hours: f64 =
+                f64::from_i64(vrcx_offline_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
 
-            let activations: usize = buckets.iter().flatten()
+            let activations: usize = buckets
+                .iter()
+                .flatten()
                 .map(|bucket_value| bucket_value.total_dates())
                 .sum();
             let active_seconds: i64 = i64::try_from(activations).unwrap() * i64::from(bucket_duration_seconds);
             let active_duration: Duration = Duration::seconds(active_seconds);
-            let active_hours: f64 = f64::from_i64(active_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
+            let active_hours: f64 =
+                f64::from_i64(active_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
 
             let active_percent: f64 = 100.0 * active_hours / vrcx_hours;
 
-            eprintln!("VRCX range: {vrcx_hours:.2} hours. VRCX actually active for {active_hours:.2} hours. That's {active_percent:.1}% uptime. Last VRCX data is {vrcx_offline_hours:.2} hours old.");
+            eprintln!(
+                "VRCX range: {vrcx_hours:.2} hours. VRCX actually active for {active_hours:.2} hours. That's {active_percent:.1}% uptime. Last VRCX data is {vrcx_offline_hours:.2} hours old."
+            );
         }
     }
 
     if let Some(start_time) = start_time {
         let desired_duration = current_time.signed_duration_since(start_time);
-        let desired_hours: f64 = f64::from_i64(desired_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
+        let desired_hours: f64 =
+            f64::from_i64(desired_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
 
-        let activations: usize = buckets.iter().flatten()
+        let activations: usize = buckets
+            .iter()
+            .flatten()
             .flat_map(|bucket_value| bucket_value.vrcx_activity_dates.iter())
             .filter(|time| time >= &&start_time)
             .count();
         let active_seconds: i64 = i64::try_from(activations).unwrap() * i64::from(bucket_duration_seconds);
         let active_duration: Duration = Duration::seconds(active_seconds);
-        let active_hours: f64 = f64::from_i64(active_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
+        let active_hours: f64 =
+            f64::from_i64(active_duration.num_milliseconds()).unwrap() / f64::from(MILLISECONDS_PER_HOUR);
 
         let active_percent: f64 = 100.0 * active_hours / desired_hours;
 
-        eprintln!("Desired range: {desired_hours:.2} hours. VRCX actually active for {active_hours:.2} hours. That's {active_percent:.1}% uptime.");
+        eprintln!(
+            "Desired range: {desired_hours:.2} hours. VRCX actually active for {active_hours:.2} hours. That's {active_percent:.1}% uptime."
+        );
     }
 }
 
@@ -406,7 +513,9 @@ fn print_buckets(
 
             let vrcx_activity_count = bucket_value.total_dates();
             if vrcx_activity_count == 0 && online_count != 0 {
-                panic!("We somehow have vrcx_activity_count={vrcx_activity_count} and online_count={online_count}, which is nonsensical.");
+                panic!(
+                    "We somehow have vrcx_activity_count={vrcx_activity_count} and online_count={online_count}, which is nonsensical."
+                );
             }
 
             if u32::try_from(vrcx_activity_count).unwrap() < minimum_bucket_activations {
@@ -435,7 +544,8 @@ fn print_buckets(
                  * The solution is to record the number of days for which a bucket is "active", and divide the friend online count by that activity count.
                  * This normalizes the data. For Sunday, 180 / 90 = 2. For Wednesday, 10 / 5 = 2.
                  */
-                let normalized_online_activity: f64 = f64::from(online_count) / f64::from_usize(vrcx_activity_count).unwrap();
+                let normalized_online_activity: f64 =
+                    f64::from(online_count) / f64::from_usize(vrcx_activity_count).unwrap();
                 print!("\t{normalized_online_activity}");
             } else {
                 // we aren't normalizing, so we just return the online_count integer
@@ -461,7 +571,9 @@ fn bucket_index_to_time(bucket_duration_seconds: u32, bucket_index: usize) -> Na
 /// check if a given user has been filtered out by our configuration
 fn is_user_allowed(user_id: &str, friend_ids: &Option<HashSet<String>>) -> bool {
     // if friend ids is unset, then allow every user id
-    friend_ids.as_ref().map_or(true, |friend_ids| friend_ids.contains(user_id))
+    friend_ids
+        .as_ref()
+        .map_or(true, |friend_ids| friend_ids.contains(user_id))
 }
 
 /// parse a timestamp from a sqlite result

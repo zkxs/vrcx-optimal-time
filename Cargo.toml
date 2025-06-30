@@ -1,7 +1,7 @@
 [package]
 name = "vrcx-optimal-time"
 version = "0.6.0"
-edition = "2021"
+edition = "2024"
 authors = ["Michael Ripley <zkxs00@gmail.com>"]
 description = "Analyzes VRCX logs for optimal VRC playtimes"
 license = "MIT"

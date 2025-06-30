@@ -6,7 +6,9 @@ use std::collections::HashSet;
 
 use chrono::{DateTime, Duration, Local, Utc};
 
-use crate::constants::{COLUMN_INDEX_CREATED_AT, COLUMN_INDEX_DISPLAY_NAME, COLUMN_INDEX_EVENT_TYPE, COLUMN_INDEX_USER_ID};
+use crate::constants::{
+    COLUMN_INDEX_CREATED_AT, COLUMN_INDEX_DISPLAY_NAME, COLUMN_INDEX_EVENT_TYPE, COLUMN_INDEX_USER_ID,
+};
 
 /// value of a bucket. This represents an n-minute window on a certain day of the week. For example, 8:00 to 8:10 on a Monday.
 #[derive(Clone, Default)]
@@ -78,7 +80,11 @@ impl TryFrom<&str> for OnlineOfflineEventType {
         match value {
             "Online" => Ok(Self::Online),
             "Offline" => Ok(Self::Offline),
-            _ => Err(rusqlite::Error::InvalidColumnType(COLUMN_INDEX_EVENT_TYPE, value.to_string(), rusqlite::types::Type::Text))
+            _ => Err(rusqlite::Error::InvalidColumnType(
+                COLUMN_INDEX_EVENT_TYPE,
+                value.to_string(),
+                rusqlite::types::Type::Text,
+            )),
         }
     }
 }
@@ -117,10 +123,7 @@ pub struct TimeSpan {
 
 impl TimeSpan {
     pub const fn new(start: DateTime<Utc>, stop: DateTime<Utc>) -> Self {
-        Self {
-            start,
-            stop,
-        }
+        Self { start, stop }
     }
 
     pub fn is_negative_or_zero(self) -> bool {
