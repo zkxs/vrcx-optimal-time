@@ -9,8 +9,8 @@ readme = "README.md"
 repository = "https://github.com/zkxs/vrcx-optimal-time"
 
 [dependencies]
-rusqlite = { version = "0.36", features = ["bundled"] }
-toml = "0.8"
+rusqlite = { version = "0.37", features = ["bundled"] }
+toml = "0.9"
 serde = { version = "1", features = ["derive"] }
 serde_derive = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
